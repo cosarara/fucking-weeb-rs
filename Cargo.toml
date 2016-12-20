@@ -1,0 +1,19 @@
+[package]
+name = "fucking-weeb-rs"
+version = "0.1.0"
+authors = ["Jaume Delclòs Coll <cosarara97@gmail.com>"]
+
+[dependencies.gtk]
+version = "0.1.1"
+features = ["v3_16"]
+
+[dependencies.gdk]
+version = "0.5.1"
+
+[dependencies.gdk-sys]
+version = "0.3.2"
+
+[dependencies.gdk-pixbuf]
+version = "0.1.1"
+
+
