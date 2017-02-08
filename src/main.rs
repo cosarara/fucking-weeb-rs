@@ -188,14 +188,20 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
     // connections
     let bw = window.clone();
     let bs = items.clone();
+    let bspin = spin.clone();
     back_button.connect_clicked(move |_| {
-        main_screen(&bw, &bs);
+        let mut items = bs.clone();
+        let ep = bspin.get_value_as_int();
+        items[i].current_ep = ep;
+        main_screen(&bw, &items);
     });
 
     let dw = window.clone();
     let mut ds = items.clone();
     ds.remove(i);
+    // FIXME: prompt confirmation
     remove_button.connect_clicked(move |_| {
+        save_db(&ds);
         main_screen(&dw, &ds);
     });
 
@@ -219,6 +225,16 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         wnspin.set_value(ep as f64);
         show.current_ep = ep;
         watch(&show);
+    });
+
+    let vcspin = spin.clone();
+    let vcitems = items.clone();
+    spin.connect_value_changed(move |_| {
+        let ep = vcspin.get_value_as_int();
+        //println!("{}", ep);
+        let mut items = vcitems.clone();
+        items[i].current_ep = ep;
+        save_db(&items);
     });
 
     window.show_all();
@@ -357,6 +373,15 @@ fn load_db() -> Vec<Show> {
     }
 }
 
+fn save_db(items: &Vec<Show>) {
+    // TODO: rotate file for safety
+    // what happens if the process is killed mid-write?
+    let encoded = json::as_pretty_json(&items);
+    //println!("{}", encoded);
+    let mut file = File::create("fw-rs-db.json").unwrap();
+    file.write_all(format!("{}\n", encoded).as_bytes()).unwrap();
+}
+
 fn main() {
     if gtk::init().is_err() {
         println!("Failed to initialize GTK.");
@@ -380,10 +405,5 @@ fn main() {
     });
 
     gtk::main();
-
-    let encoded = json::as_pretty_json(&items);
-    println!("{}", encoded);
-    let mut file = File::create("fw-rs-db.json").unwrap();
-    file.write_all(format!("{}\n", encoded).as_bytes()).unwrap();
 }
 
