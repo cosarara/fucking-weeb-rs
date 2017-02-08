@@ -99,6 +99,22 @@ fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     Err("matching file not found".to_string())
 }
 
+fn watch(show: &Show) {
+    let ref dir = show.path;
+    let ref reg = show.regex;
+    let ep = show.current_ep.abs() as u32;
+    match find_ep(&dir, ep, &reg) {
+        Ok(path) => {
+            println!("{}", path.to_str().unwrap());
+            let cmd = Command::new("mpv")
+                .arg(path.to_str().unwrap())
+                .spawn()
+                .expect("couldn't launch mpv");
+        },
+        Err(e) => println!("{}", e) // TODO: gtk dialog
+    }
+}
+
 fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
     let show = items[i].clone();
     if let Some(child) = window.get_child() {
@@ -183,22 +199,26 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         main_screen(&dw, &ds);
     });
 
-    let dir = show.path.clone();
     let wspin = spin.clone();
-    let reg = show.regex.clone();
+    let wshow = show.clone();
 
     watch_button.connect_clicked(move |_| {
-        let ep = wspin.get_value_as_int().abs() as u32;
-        match find_ep(&dir, ep, &reg) {
-            Ok(path) => {
-                println!("{}", path.to_str().unwrap());
-                let cmd = Command::new("mpv")
-                    .arg(path.to_str().unwrap())
-                    .spawn()
-                    .expect("couldn't launch mpv");
-            },
-            Err(e) => println!("{}", e) // TODO: gtk dialog
-        }
+        let ep = wspin.get_value_as_int();
+        let mut show = wshow.clone();
+        show.current_ep = ep;
+        watch(&show);
+    });
+
+    let wnspin = spin.clone();
+    let wnshow = show.clone();
+    watch_next_button.connect_clicked(move |_| {
+        let mut show = wnshow.clone();
+        let ep = wnspin.get_value_as_int();
+        let max_ep = show.total_eps;
+        let ep = if ep < max_ep { ep+1 } else { ep };
+        wnspin.set_value(ep as f64);
+        show.current_ep = ep;
+        watch(&show);
     });
 
     window.show_all();
@@ -313,27 +333,25 @@ fn load_db() -> Vec<Show> {
         }
     ];
 
-    match File::open("fw-rs-db.json") {
-        Ok(mut file) => {
-            let mut s = String::new();
-            match file.read_to_string(&mut s) {
-                Ok(_) => {
-                    match json::decode(&s) {
-                        Ok(a) => a,
-                        Err(_) => {
-                            println!("error decoding");
-                            default_items
-                        }
-                    }
-                },
-                Err(_) => {
-                    println!("error reading");
-                    default_items
-                }
-            }
+    let mut file = match File::open("fw-rs-db.json") {
+        Err(e) => {
+            println!("error opening db file: {}", e.to_string());
+            return default_items
         },
-        Err(_) => {
-            println!("error opening");
+        Ok(file) => file
+    };
+    let mut s = String::new();
+    match file.read_to_string(&mut s) {
+        Err(e) => {
+            println!("error reading db: {}", e.to_string());
+            return default_items;
+        }
+        Ok(_) => ()
+    }
+    match json::decode(&s) {
+        Ok(a) => a,
+        Err(e) => {
+            println!("error decoding db json: {}", e.to_string());
             default_items
         }
     }
