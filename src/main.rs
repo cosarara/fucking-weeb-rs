@@ -3,7 +3,6 @@ extern crate gdk_sys;
 extern crate gdk_pixbuf;
 extern crate rustc_serialize;
 extern crate regex;
-#[macro_use] extern crate lazy_static;
 
 use rustc_serialize::json;
 
@@ -21,7 +20,6 @@ use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::borrow::Cow;
 use regex::Regex;
 
 #[derive(RustcDecodable, RustcEncodable, Clone)]
@@ -36,41 +34,9 @@ struct Show {
 
 static APP_TITLE : &'static str = "Fucking Weeb";
 
-//fn ensure_trailing_slash<'a>(s: &'a str) -> Cow<'a, str> {
-//    lazy_static! {
-//        static ref RE: Regex = Regex::new("/*$").unwrap();
-//    }
-//    RE.replace(s, "/")
-//}
 
-// dirty dirty :)
-// look at the test to see what it does
-macro_rules! expand_format {
-    ( $n:expr, [ $( $x:expr ),* ] ) => {
-        format!($n, $($x),*);
-    };
-}
 
-macro_rules! format_vec {
-    ( $n:tt, $( $x:expr ),* ) => {
-        {
-            let mut temp_vec = Vec::new();
-            $(
-                temp_vec.push(expand_format!($x, $n));
-             )*
-                temp_vec
-        }
-    };
-}
-
-#[test]
-fn test_format_vec() {
-    assert_eq!(
-        format_vec!([1, 2], "{},{}", "{}.{}", "{}-{}"),
-        ["1,2", "1.2", "1-2"]);
-}
-
-fn find_ep(dir: &str, num: u32) -> Result<PathBuf, String> {
+fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     let dir = std::path::Path::new(dir);
     if !dir.is_dir() {
         return Err("not a directory".to_string());
@@ -92,11 +58,18 @@ fn find_ep(dir: &str, num: u32) -> Result<PathBuf, String> {
     }
     let mut files: Vec<PathBuf> = files.iter().map(|x| x.path()).collect();
     files.sort();
-    for r in format_vec!([num],
-        "(e|ep|episode|第)[0 ]*{}[^0-9]",
-        "( |_|-|#|\\.)[0 ]*{}[^0-9]",
-        "(^|[^0-9])[0 ]*{}[^0-9]",
-        "{}[^0-9]") {
+
+    let regexes = if regex != "" {
+        vec![regex]
+    } else {
+        vec![
+            "(e|ep|episode|第)[0 ]*{}[^0-9]",
+            "( |_|-|#|\\.)[0 ]*{}[^0-9]",
+            "(^|[^0-9])[0 ]*{}[^0-9]",
+            "{}[^0-9]"]
+    };
+
+    for r in regexes.iter().map(|x| x.replace("{}", &format!("{}", num))) {
         println!("{}", r);
         let re = Regex::new(&r).unwrap();
         let mut best_match: Option<&Path> = None;
@@ -210,19 +183,19 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         main_screen(&dw, &ds);
     });
 
-    let vp = "/home/jaume/videos/series/[a-s]_Samurai_Champloo_[1080p_bd-rip]/[a-s]_samurai_champloo_-_10_-_lethal_lunacy__rs2_[1080p_bd-rip][424C7B26].mkv";
     let dir = show.path.clone();
     let wspin = spin.clone();
+    let reg = show.regex.clone();
 
     watch_button.connect_clicked(move |_| {
         let ep = wspin.get_value_as_int().abs() as u32;
-        match find_ep(&dir, ep) {
+        match find_ep(&dir, ep, &reg) {
             Ok(path) => {
                 println!("{}", path.to_str().unwrap());
-                //let cmd = Command::new("mpv")
-                //    .arg(path.to_str().unwrap())
-                //    .spawn()
-                //    .expect("couldn't launch mpv");
+                let cmd = Command::new("mpv")
+                    .arg(path.to_str().unwrap())
+                    .spawn()
+                    .expect("couldn't launch mpv");
             },
             Err(e) => println!("{}", e) // TODO: gtk dialog
         }
