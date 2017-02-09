@@ -216,7 +216,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         let mut items = es.clone();
         let ep = espin.get_value_as_int();
         items[i].current_ep = ep;
-        edit_screen(&ew, &items, i);
+        edit_screen(&ew, &items, Some(i));
     });
 
     let wspin = spin.clone();
@@ -254,8 +254,29 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
     window.show_all();
 }
 
-fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
-    let show = items[i].clone();
+fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>) {
+    let mut items = items.clone();
+    let show = match i {
+        Some(i) => items[i].clone(),
+        None => {
+            let s = Show {
+                name: "".to_string(),
+                // TODO: defaults
+                path: "".to_string(),
+                poster_path: "".to_string(),
+                current_ep: 1,
+                total_eps: 24,
+                regex: "".to_string(),
+                player: "".to_string(),
+            };
+            items.push(s.clone());
+            s
+        },
+    };
+    let i = match i {
+        Some(i) => i,
+        None => items.len() - 1
+    };
     if let Some(child) = window.get_child() {
         child.destroy();
     };
@@ -471,6 +492,12 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
 
         button_box.insert(&cover_event_box, -1);
     }
+
+    let aw = window.clone();
+    let ai : Vec<Show> = items.clone();
+    add_button.connect_clicked(move |_| {
+        edit_screen(&aw, &ai, None);
+    });
 
     // MAIN
     window.add(&main_box);
