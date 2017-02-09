@@ -28,6 +28,9 @@ extern crate hyper_native_tls;
 #[macro_use]
 extern crate json;
 
+#[macro_use]
+extern crate lazy_static;
+
 use rustc_serialize::json as rsjson;
 
 use gtk::prelude::*;
@@ -75,6 +78,10 @@ struct WeebDB {
 static APP_TITLE: &'static str = "Fucking Weeb";
 static TMDB: &'static str = "https://api.themoviedb.org/3/";
 static TMDB_KEY: &'static str = "api_key=fd7b3b3e7939e8eb7c8e26836b8ea410";
+
+lazy_static! {
+    static ref TMDB_BASE_URL: Result<String, String> = get_tmdb_base_url();
+}
 
 fn make_https_client() -> native_tls::Result<hyper::client::Client> {
     NativeTlsClient::new().map(
@@ -575,9 +582,9 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
             println!("no results array");
             return;
         }
-        let tmdb_base_url = match get_tmdb_base_url() {
-            Ok(a) => a,
-            Err(e) => {
+        let tmdb_base_url = match *TMDB_BASE_URL {
+            Ok(ref a) => a,
+            Err(ref e) => {
                 // TODO: gtk dialog
                 println!("can't get tmdb base url: {}", e);
                 return;
