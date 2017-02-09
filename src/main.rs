@@ -611,8 +611,20 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
             };
             let file_name = Regex::new(r".*/").unwrap().replace(&image_url, "").into_owned();
 
-            let mut file = File::create(file_name.clone()).unwrap();
-            file.write_all(&image_file).unwrap();
+            let mut file = match File::create(file_name.clone()) {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("error opening image file for writing: {}", e);
+                    return;
+                }
+            };
+            match file.write_all(&image_file) {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("error saving image: {}", e);
+                    return;
+                }
+            }
             fpp.set_filename(file_name);
             break;
         }
@@ -855,7 +867,12 @@ fn save_db(settings: &Settings, items: &Vec<Show>) {
     //println!("{}", encoded);
     // TODO: handle errors
     let mut file = File::create("fw-rs-db.json").unwrap();
-    file.write_all(format!("{}\n", encoded).as_bytes()).unwrap();
+    match file.write_all(format!("{}\n", encoded).as_bytes()) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error saving db: {}", e);
+        }
+    };
 }
 
 fn main() {
