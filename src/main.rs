@@ -205,6 +205,16 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         main_screen(&dw, &ds);
     });
 
+    let ew = window.clone();
+    let es = items.clone();
+    let espin = spin.clone();
+    edit_button.connect_clicked(move |_| {
+        let mut items = es.clone();
+        let ep = espin.get_value_as_int();
+        items[i].current_ep = ep;
+        edit_screen(&ew, &items, i);
+    });
+
     let wspin = spin.clone();
     let wshow = show.clone();
 
@@ -236,6 +246,94 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         items[i].current_ep = ep;
         save_db(&items);
     });
+
+    window.show_all();
+}
+
+fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
+    let show = items[i].clone();
+    if let Some(child) = window.get_child() {
+        child.destroy();
+    };
+    let main_box = Box::new(Orientation::Vertical, 0);
+    main_box.set_spacing(20);
+    main_box.set_margin_top(20);
+    main_box.set_margin_start(20);
+    main_box.set_margin_end(20);
+    main_box.set_margin_bottom(20);
+    window.add(&main_box);
+
+    let form = gtk::Grid::new();
+    form.set_column_spacing(20);
+    form.set_row_spacing(10);
+    main_box.pack_start(&form, true, true, 5);
+
+    let name_label = Label::new(Some("Name:"));
+    name_label.set_xalign(1.0);
+    let name_entry = gtk::Entry::new();
+    name_entry.set_text("name goes here");
+    name_entry.set_hexpand(true);
+    form.attach(&name_label, 0, 0, 1, 1);
+    form.attach(&name_entry, 1, 0, 3, 1);
+
+    let path_label = Label::new(Some("Path:"));
+    path_label.set_xalign(1.0);
+
+    let path_picker = gtk::FileChooserButton::new(
+        "Select the search path",
+        gtk::FileChooserAction::SelectFolder);
+
+    path_picker.set_hexpand(true);
+
+    form.attach(&path_label, 0, 1, 1, 1);
+    form.attach(&path_picker, 1, 1, 3, 1);
+
+    let poster_label = Label::new(Some("Poster Image Path:"));
+    poster_label.set_xalign(1.0);
+
+    let poster_picker = gtk::FileChooserButton::new(
+        "Select the poster image",
+        gtk::FileChooserAction::Open);
+    poster_picker.set_hexpand(true);
+
+    let fetch_image_button = Button::new_with_label("Download");
+
+    form.attach(&poster_label, 0, 2, 1, 1);
+    form.attach(&poster_picker, 1, 2, 2, 1);
+    form.attach(&fetch_image_button, 3, 2, 1, 1);
+
+    let eps_label = Label::new(Some("Current Episode:"));
+    eps_label.set_xalign(1.0);
+    let curr_entry = gtk::Entry::new();
+    curr_entry.set_hexpand(true);
+    let slash_label = Label::new(Some("/"));
+    let total_entry = gtk::Entry::new();
+    total_entry.set_hexpand(true);
+    form.attach(&eps_label, 0, 3, 1, 1);
+    form.attach(&curr_entry, 1, 3, 1, 1);
+    form.attach(&slash_label, 2, 3, 1, 1);
+    form.attach(&total_entry, 3, 3, 1, 1);
+
+    let player_label = Label::new(Some("Video Player:"));
+    player_label.set_xalign(1.0);
+    let player_entry = gtk::Entry::new();
+    form.attach(&player_label, 0, 4, 1, 1);
+    form.attach(&player_entry, 1, 4, 3, 1);
+
+    let regex_label = Label::new(Some("Regex:"));
+    regex_label.set_xalign(1.0);
+    let regex_entry = gtk::Entry::new();
+    form.attach(&regex_label, 0, 5, 1, 1);
+    form.attach(&regex_entry, 1, 5, 3, 1);
+
+    let button_box = Box::new(Orientation::Horizontal, 0);
+    let save_button = Button::new_with_label("Save");
+    let cancel_button = Button::new_with_label("Cancel");
+
+    button_box.pack_start(&save_button, true, true, 5);
+    button_box.pack_start(&cancel_button, true, true, 5);
+
+    main_box.pack_end(&button_box, false, false, 5);
 
     window.show_all();
 }
