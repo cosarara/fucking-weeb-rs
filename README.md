@@ -39,6 +39,5 @@ Things I'm missing:
 * Auto filling in the Add form
 * Importing databases from the original format
 * Using the XDG directories
-* Settings screen
 * Error dialogs
 

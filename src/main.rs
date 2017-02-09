@@ -51,8 +51,20 @@ struct Show {
     player: String,
 }
 
-static APP_TITLE : &'static str = "Fucking Weeb";
+#[derive(RustcDecodable, RustcEncodable, Clone)]
+struct Settings {
+    player: String,
+    path: String,
+    autoplay: bool,
+}
 
+#[derive(RustcDecodable, RustcEncodable, Clone)]
+struct WeebDB {
+    settings: Settings,
+    shows: Vec<Show>,
+}
+
+static APP_TITLE: &'static str = "Fucking Weeb";
 
 
 fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
@@ -118,24 +130,38 @@ fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     Err("matching file not found".to_string())
 }
 
-fn watch(show: &Show) {
+fn watch(show: &Show, player: &str) {
     let ref dir = show.path;
     let ref reg = show.regex;
     let ep = show.current_ep.abs() as u32;
-    match find_ep(&dir, ep, &reg) {
-        Ok(path) => {
-            println!("{}", path.to_str().unwrap());
-            //let cmd =
-            Command::new("mpv")
-                .arg(path.to_str().unwrap())
-                .spawn()
-                .expect("couldn't launch mpv");
+    let path = match find_ep(&dir, ep, &reg) {
+        Err(e) => {
+            println!("{}", e); // TODO: gtk dialog
+            return;
         },
-        Err(e) => println!("{}", e) // TODO: gtk dialog
+        Ok(path) => path
+    };
+    println!("{}", path.to_str().unwrap());
+    let player_full_cmd = if show.player == "" { player } else { &show.player };
+    let mut cmd_parts = player_full_cmd.split(' ');
+    let player_cmd = match cmd_parts.next() {
+        Some(a) => a,
+        None => "mpv"
+    };
+    let player_args: Vec<&str> = cmd_parts.collect();
+    let cmd = Command::new(player_cmd)
+        .args(&player_args)
+        .arg(path.to_str().unwrap())
+        .spawn();
+    match cmd {
+        Err(e) => {
+            println!("{}", e); // TODO: gtk dialog
+        },
+        Ok(_) => ()
     }
 }
 
-fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
+fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings) {
     let show = items[i].clone();
     if let Some(child) = window.get_child() {
         child.destroy();
@@ -211,44 +237,48 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
     let bw = window.clone();
     let bs = items.clone();
     let bspin = spin.clone();
+    let bset = settings.clone();
     back_button.connect_clicked(move |_| {
         let mut items = bs.clone();
         let ep = bspin.get_value_as_int();
         items[i].current_ep = ep;
-        main_screen(&bw, &items);
+        main_screen(&bw, &items, &bset);
     });
 
     let dw = window.clone();
     let mut ds = items.clone();
+    let dset = settings.clone();
     ds.remove(i);
     // FIXME: prompt confirmation
     remove_button.connect_clicked(move |_| {
-        save_db(&ds);
-        main_screen(&dw, &ds);
+        save_db(&dset, &ds);
+        main_screen(&dw, &ds, &dset);
     });
 
     let ew = window.clone();
     let es = items.clone();
     let espin = spin.clone();
+    let eset = settings.clone();
     edit_button.connect_clicked(move |_| {
         let mut items = es.clone();
         let ep = espin.get_value_as_int();
         items[i].current_ep = ep;
-        edit_screen(&ew, &items, Some(i));
+        edit_screen(&ew, &items, Some(i), &eset);
     });
 
     let wspin = spin.clone();
     let wshow = show.clone();
-
+    let wplayer = settings.player.clone();
     watch_button.connect_clicked(move |_| {
         let ep = wspin.get_value_as_int();
         let mut show = wshow.clone();
         show.current_ep = ep;
-        watch(&show);
+        watch(&show, &wplayer);
     });
 
     let wnspin = spin.clone();
     let wnshow = show.clone();
+    let wnplayer = settings.player.clone();
     watch_next_button.connect_clicked(move |_| {
         let mut show = wnshow.clone();
         let ep = wnspin.get_value_as_int();
@@ -256,31 +286,33 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
         let ep = if ep < max_ep { ep+1 } else { ep };
         wnspin.set_value(ep as f64);
         show.current_ep = ep;
-        watch(&show);
+        watch(&show, &wnplayer);
     });
 
     let vcspin = spin.clone();
     let vcitems = items.clone();
+    let vcset = settings.clone();
     spin.connect_value_changed(move |_| {
         let ep = vcspin.get_value_as_int();
         //println!("{}", ep);
         let mut items = vcitems.clone();
         items[i].current_ep = ep;
-        save_db(&items);
+        save_db(&vcset, &items);
     });
 
     window.show_all();
 }
 
-fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>) {
+fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &Settings) {
+    let orig_items = items.clone();
+    let mut adding = false;
     let mut items = items.clone();
     let show = match i {
         Some(i) => items[i].clone(),
         None => {
             let s = Show {
                 name: "".to_string(),
-                // TODO: defaults
-                path: "".to_string(),
+                path: settings.path.clone(),
                 poster_path: "".to_string(),
                 current_ep: 1,
                 total_eps: 24,
@@ -288,6 +320,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>) {
                 player: "".to_string(),
             };
             items.push(s.clone());
+            adding = true;
             s
         },
     };
@@ -390,13 +423,19 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>) {
     main_box.pack_end(&button_box, false, false, 5);
 
     let w = window.clone();
-    let s : Vec<Show> = items.clone();
+    let s: Vec<Show> = orig_items.clone();
+    let cset = settings.clone();
     cancel_button.connect_clicked(move |_| {
-        view_screen(&w, &s, i);
+        if adding {
+            main_screen(&w, &s, &cset);
+        } else {
+            view_screen(&w, &s, i, &cset);
+        }
     });
 
     let sw = window.clone();
-    let ss : Vec<Show> = items.clone();
+    let ss: Vec<Show> = items.clone();
+    let sset = settings.clone();
     save_button.connect_clicked(move |_| {
         let mut items = ss.clone();
         items[i].name = name_entry.get_text().unwrap();
@@ -414,14 +453,78 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>) {
         };
         items[i].regex = regex_entry.get_text().unwrap();
         items[i].player = player_entry.get_text().unwrap();
+        save_db(&sset, &items);
 
-        view_screen(&sw, &items, i);
+        view_screen(&sw, &items, i, &sset);
     });
 
     window.show_all();
 }
 
-fn main_screen(window: &Window, items: &Vec<Show>) {
+fn settings_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
+    if let Some(child) = window.get_child() {
+        child.destroy();
+    };
+
+    let main_box = Box::new(Orientation::Vertical, 20);
+    main_box.set_margin_top(20);
+    main_box.set_margin_start(20);
+    main_box.set_margin_end(20);
+    main_box.set_margin_bottom(20);
+    window.add(&main_box);
+
+    let form = gtk::Grid::new();
+    form.set_column_spacing(20);
+    form.set_row_spacing(10);
+    main_box.pack_start(&form, true, true, 5);
+
+    let player_label = Label::new(Some("Video Player:"));
+    player_label.set_xalign(1.0);
+    let player_entry = gtk::Entry::new();
+    player_entry.set_text(&settings.player);
+    player_entry.set_hexpand(true);
+    form.attach(&player_label, 0, 0, 1, 1);
+    form.attach(&player_entry, 1, 0, 3, 1);
+
+    let path_label = Label::new(Some("Default Path:"));
+    path_label.set_xalign(1.0);
+    let path_entry = gtk::Entry::new();
+    path_entry.set_text(&settings.path);
+    path_entry.set_hexpand(true);
+    form.attach(&path_label, 0, 1, 1, 1);
+    form.attach(&path_entry, 1, 1, 3, 1);
+
+    let button_box = Box::new(Orientation::Horizontal, 0);
+    let save_button = Button::new_with_label("Save");
+    let cancel_button = Button::new_with_label("Cancel");
+
+    button_box.pack_start(&save_button, true, true, 5);
+    button_box.pack_start(&cancel_button, true, true, 5);
+
+    main_box.pack_end(&button_box, false, false, 5);
+
+    let cw = window.clone();
+    let cs: Vec<Show> = items.clone();
+    let cset = settings.clone();
+    cancel_button.connect_clicked(move |_| {
+        main_screen(&cw, &cs, &cset);
+    });
+
+    let sw = window.clone();
+    let ss: Vec<Show> = items.clone();
+    let sset = settings.clone();
+    save_button.connect_clicked(move |_| {
+        let mut set = sset.clone();
+        set.player = player_entry.get_text().unwrap();
+        set.path = path_entry.get_text().unwrap();
+        save_db(&set, &ss);
+        main_screen(&sw, &ss, &set);
+    });
+
+    window.show_all();
+}
+
+fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     if let Some(child) = window.get_child() {
         child.destroy();
     };
@@ -440,8 +543,12 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
 
     let settings_button = Button::new_from_icon_name(
         "gtk-preferences", IconSize::Button.into());
-    settings_button.connect_clicked(|_| {
-        println!("going to settings screen TODO");
+
+    let sw = window.clone();
+    let sitems: Vec<Show> = items.clone();
+    let sset = settings.clone();
+    settings_button.connect_clicked(move |_| {
+        settings_screen(&sw, &sitems, &sset);
     });
 
     //let button = Button::new_with_label("Click me!");
@@ -501,10 +608,11 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
         cover_box.pack_start(&l, false, true, 5);
 
         let w = window.clone();
-        let s : Vec<Show> = items.clone();
+        let s: Vec<Show> = items.clone();
         let i = index;
+        let set = settings.clone();
         cover_event_box.connect_button_press_event(move |_, _| {
-            view_screen(&w, &s, i);
+            view_screen(&w, &s, i, &set);
             Inhibit(false)
         });
 
@@ -512,9 +620,10 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
     }
 
     let aw = window.clone();
-    let ai : Vec<Show> = items.clone();
+    let ai: Vec<Show> = items.clone();
+    let aset = settings.clone();
     add_button.connect_clicked(move |_| {
-        edit_screen(&aw, &ai, None);
+        edit_screen(&aw, &ai, None, &aset);
     });
 
     // MAIN
@@ -522,32 +631,39 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
     window.show_all();
 }
 
-fn load_db() -> Vec<Show> {
-    let default_items = vec![
-        Show {
-            name: "Ranma".to_string(),
-            path: "/home/jaume/videos/series/1-More/Ranma/".to_string(),
-            poster_path: "/home/jaume/.local/share/fucking-weeb/ranma.jpg".to_string(),
-            current_ep: 25,
-            total_eps: 150,
-            regex: " 0*{}[^0-9]".to_string(),
-            player: "".to_string(),
+fn load_db() -> WeebDB {
+    let default_settings = WeebDB {
+        settings: Settings {
+            player: "mpv".to_string(),
+            path: "".to_string(),
+            autoplay: false,
         },
-        Show {
-            name: "Neon Genesis Evangelion".to_string(),
-            path: "/home/jaume/videos/series/0-Sorted/neon_genesis_evangelion-1080p-renewal_cat/".to_string(),
-            poster_path: "/home/jaume/.local/share/fucking-weeb/Neon%20Genesis%20Evangelion.jpg".to_string(),
-            current_ep: 5,
-            total_eps: 26,
-            regex: "".to_string(),
-            player: "".to_string(),
-        }
-    ];
+        shows: vec![
+            Show {
+                name: "Ranma".to_string(),
+                path: "/home/jaume/videos/series/1-More/Ranma/".to_string(),
+                poster_path: "/home/jaume/.local/share/fucking-weeb/ranma.jpg".to_string(),
+                current_ep: 25,
+                total_eps: 150,
+                regex: " 0*{}[^0-9]".to_string(),
+                player: "".to_string(),
+            },
+            Show {
+                name: "Neon Genesis Evangelion".to_string(),
+                path: "/home/jaume/videos/series/0-Sorted/neon_genesis_evangelion-1080p-renewal_cat/".to_string(),
+                poster_path: "/home/jaume/.local/share/fucking-weeb/Neon%20Genesis%20Evangelion.jpg".to_string(),
+                current_ep: 5,
+                total_eps: 26,
+                regex: "".to_string(),
+                player: "".to_string(),
+            }
+        ],
+    };
 
     let mut file = match File::open("fw-rs-db.json") {
         Err(e) => {
             println!("error opening db file: {}", e.to_string());
-            return default_items
+            return default_settings;
         },
         Ok(file) => file
     };
@@ -555,7 +671,7 @@ fn load_db() -> Vec<Show> {
     match file.read_to_string(&mut s) {
         Err(e) => {
             println!("error reading db: {}", e.to_string());
-            return default_items;
+            return default_settings;
         }
         Ok(_) => ()
     }
@@ -563,15 +679,19 @@ fn load_db() -> Vec<Show> {
         Ok(a) => a,
         Err(e) => {
             println!("error decoding db json: {}", e.to_string());
-            default_items
+            default_settings
         }
     }
 }
 
-fn save_db(items: &Vec<Show>) {
+fn save_db(settings: &Settings, items: &Vec<Show>) {
+    let db = WeebDB {
+        settings: settings.clone(),
+        shows: items.clone(),
+    };
     // TODO: rotate file for safety
     // what happens if the process is killed mid-write?
-    let encoded = json::as_pretty_json(&items);
+    let encoded = json::as_pretty_json(&db);
     //println!("{}", encoded);
     let mut file = File::create("fw-rs-db.json").unwrap();
     file.write_all(format!("{}\n", encoded).as_bytes()).unwrap();
@@ -587,12 +707,13 @@ fn main() {
     window.set_title(APP_TITLE);
     window.set_default_size(570, 600);
 
-    let items = load_db();
-
+    let db = load_db();
+    let shows = db.shows;
+    let settings = db.settings;
 
     let w = window.clone();
-    //
-    main_screen(&w, &items);
+
+    main_screen(&w, &shows, &settings);
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
