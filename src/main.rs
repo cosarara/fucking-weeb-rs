@@ -30,6 +30,7 @@ struct Show {
     current_ep: i32,
     total_eps: i32,
     regex: String,
+    player: String,
 }
 
 static APP_TITLE : &'static str = "Fucking Weeb";
@@ -106,7 +107,8 @@ fn watch(show: &Show) {
     match find_ep(&dir, ep, &reg) {
         Ok(path) => {
             println!("{}", path.to_str().unwrap());
-            let cmd = Command::new("mpv")
+            //let cmd =
+            Command::new("mpv")
                 .arg(path.to_str().unwrap())
                 .spawn()
                 .expect("couldn't launch mpv");
@@ -149,12 +151,14 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize) {
     cover_event_box.set_events(
         gdk_sys::GDK_BUTTON_PRESS_MASK.bits() as i32);
 
-    let pixbuf = Pixbuf::new_from_file_at_size(
-        &show.poster_path, 300, 300)
-        .unwrap();
 
     // TODO: use cairo here, to have it resize automagically
-    let image = Image::new_from_pixbuf(Some(&pixbuf));
+    let image = match Pixbuf::new_from_file_at_size(
+        &show.poster_path, 300, 300) {
+        Ok(pixbuf) => Image::new_from_pixbuf(Some(&pixbuf)),
+        Err(_) => Image::new_from_icon_name("gtk-missing-image", 1)
+    };
+
     cover_event_box.add(&image);
 
     main_box.pack_start(&cover_event_box, true, true, 5);
@@ -271,7 +275,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
     let name_label = Label::new(Some("Name:"));
     name_label.set_xalign(1.0);
     let name_entry = gtk::Entry::new();
-    name_entry.set_text("name goes here");
+    name_entry.set_text(&show.name);
     name_entry.set_hexpand(true);
     form.attach(&name_label, 0, 0, 1, 1);
     form.attach(&name_entry, 1, 0, 3, 1);
@@ -283,6 +287,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
         "Select the search path",
         gtk::FileChooserAction::SelectFolder);
 
+    path_picker.set_filename(show.path);
     path_picker.set_hexpand(true);
 
     form.attach(&path_label, 0, 1, 1, 1);
@@ -295,6 +300,12 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
         "Select the poster image",
         gtk::FileChooserAction::Open);
     poster_picker.set_hexpand(true);
+    poster_picker.set_filename(show.poster_path);
+
+    let image_filter = gtk::FileFilter::new();
+    image_filter.add_mime_type("image/*");
+    image_filter.set_name(Some("Image File"));
+    poster_picker.add_filter(&image_filter);
 
     let fetch_image_button = Button::new_with_label("Download");
 
@@ -306,9 +317,11 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
     eps_label.set_xalign(1.0);
     let curr_entry = gtk::Entry::new();
     curr_entry.set_hexpand(true);
+    curr_entry.set_text(&format!("{}", show.current_ep));
     let slash_label = Label::new(Some("/"));
     let total_entry = gtk::Entry::new();
     total_entry.set_hexpand(true);
+    total_entry.set_text(&format!("{}", show.total_eps));
     form.attach(&eps_label, 0, 3, 1, 1);
     form.attach(&curr_entry, 1, 3, 1, 1);
     form.attach(&slash_label, 2, 3, 1, 1);
@@ -317,12 +330,14 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
     let player_label = Label::new(Some("Video Player:"));
     player_label.set_xalign(1.0);
     let player_entry = gtk::Entry::new();
+    player_entry.set_text(&show.player);
     form.attach(&player_label, 0, 4, 1, 1);
     form.attach(&player_entry, 1, 4, 3, 1);
 
     let regex_label = Label::new(Some("Regex:"));
     regex_label.set_xalign(1.0);
     let regex_entry = gtk::Entry::new();
+    regex_entry.set_text(&show.regex);
     form.attach(&regex_label, 0, 5, 1, 1);
     form.attach(&regex_entry, 1, 5, 3, 1);
 
@@ -334,6 +349,35 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: usize) {
     button_box.pack_start(&cancel_button, true, true, 5);
 
     main_box.pack_end(&button_box, false, false, 5);
+
+    let w = window.clone();
+    let s : Vec<Show> = items.clone();
+    cancel_button.connect_clicked(move |_| {
+        view_screen(&w, &s, i);
+    });
+
+    let sw = window.clone();
+    let ss : Vec<Show> = items.clone();
+    save_button.connect_clicked(move |_| {
+        let mut items = ss.clone();
+        items[i].name = name_entry.get_text().unwrap();
+        items[i].path = path_picker.get_filename().unwrap().as_path()
+            .to_str().unwrap().to_string();
+        items[i].poster_path = poster_picker.get_filename().unwrap().as_path()
+            .to_str().unwrap().to_string();
+        items[i].current_ep = match (&curr_entry.get_text().unwrap()).parse::<i32>() {
+            Ok(n) => n,
+            Err(_) => 0,
+        };
+        items[i].total_eps = match (&total_entry.get_text().unwrap()).parse::<i32>() {
+            Ok(n) => n,
+            Err(_) => 0,
+        };
+        items[i].regex = regex_entry.get_text().unwrap();
+        items[i].player = player_entry.get_text().unwrap();
+
+        view_screen(&sw, &items, i);
+    });
 
     window.show_all();
 }
@@ -398,13 +442,19 @@ fn main_screen(window: &Window, items: &Vec<Show>) {
         cover_event_box.add(&cover_box);
         cover_box.set_size_request(100, 200);
 
-        // FIXME
+        // TODO: how do I unref?
+        let image = match Pixbuf::new_from_file_at_size(
+            &item.poster_path, 200, 200) {
+            Ok(pixbuf) => Image::new_from_pixbuf(Some(&pixbuf)),
+            Err(_) => Image::new_from_icon_name("gtk-missing-image", 1)
+        };
+        /*
         let pixbuf = Pixbuf::new_from_file_at_size(
             &item.poster_path, 200, 200)
             .unwrap();
 
         let image = Image::new_from_pixbuf(Some(&pixbuf));
-        // TODO: how do I unref?
+        */
         //
         cover_box.pack_start(&image, false, true, 5);
 
@@ -436,6 +486,7 @@ fn load_db() -> Vec<Show> {
             current_ep: 25,
             total_eps: 150,
             regex: " 0*{}[^0-9]".to_string(),
+            player: "".to_string(),
         },
         Show {
             name: "Neon Genesis Evangelion".to_string(),
@@ -444,6 +495,7 @@ fn load_db() -> Vec<Show> {
             current_ep: 5,
             total_eps: 26,
             regex: "".to_string(),
+            player: "".to_string(),
         }
     ];
 
