@@ -21,8 +21,14 @@ extern crate gdk_sys;
 extern crate gdk_pixbuf;
 extern crate rustc_serialize;
 extern crate regex;
+extern crate hyper;
+extern crate hyper_native_tls;
 
-use rustc_serialize::json;
+// yes we have 2 different jsons k
+#[macro_use]
+extern crate json;
+
+use rustc_serialize::json as rsjson;
 
 use gtk::prelude::*;
 
@@ -39,6 +45,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use regex::Regex;
+
+use hyper_native_tls::{NativeTlsClient, native_tls};
 
 #[derive(RustcDecodable, RustcEncodable, Clone)]
 struct Show {
@@ -65,7 +73,96 @@ struct WeebDB {
 }
 
 static APP_TITLE: &'static str = "Fucking Weeb";
+static TMDB: &'static str = "https://api.themoviedb.org/3/";
+static TMDB_KEY: &'static str = "api_key=fd7b3b3e7939e8eb7c8e26836b8ea410";
 
+fn make_https_client() -> native_tls::Result<hyper::client::Client> {
+    NativeTlsClient::new().map(
+        |ssl| {
+            let connector = hyper::net::HttpsConnector::new(ssl);
+            let client = hyper::client::Client::with_connector(connector);
+            client
+        })
+}
+
+fn https_get(url: &str) -> Result<String, String> {
+    let client = match make_https_client() {
+        Ok(ssl) => ssl,
+        Err(e) => {
+            return Err(format!("error creating https client: {}", e));
+        }
+    };
+    let req = client.get(url);
+    let mut res = match req.send() {
+        Ok(res) => res,
+        Err(e) => {
+            return Err(format!("error making request: {}", e));
+        }
+    };
+    let mut text = String::new();
+    match res.read_to_string(&mut text) {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(format!("error reading response: {}", e));
+        }
+    }
+    Ok(text)
+}
+
+fn json_get(url: &str) -> Result<json::JsonValue, String> {
+    let text = match https_get(url) {
+        Ok(text) => text,
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    };
+    let parsed = match json::parse(&text) {
+        Ok(o) => o,
+        Err(e) => {
+            return Err(e.to_string());
+        },
+    };
+    Ok(parsed)
+}
+
+fn get_tmdb_base_url() -> Result<String, String> {
+    let url = format!("{}configuration?{}", TMDB, TMDB_KEY);
+    let parsed = match json_get(&url) {
+        Ok(text) => text,
+        Err(e) => {
+            return Err(e);
+        }
+    };
+    let ref json_tmdb_base_url = parsed["images"]["base_url"];
+    match json_tmdb_base_url.as_str().map(|x| x.to_string()) {
+        Some(a) => Ok(a),
+        None => Err("base_url string not found in json".to_string()),
+    }
+}
+
+fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
+    let client = match make_https_client() {
+        Ok(ssl) => ssl,
+        Err(e) => {
+            return Err(format!("error creating https client: {}", e));
+        }
+    };
+    let req = client.get(url);
+    let mut res = match req.send() {
+        Ok(res) => res,
+        Err(e) => {
+            return Err(format!("error making request: {}", e));
+        }
+    };
+    let mut file = Vec::<u8>::new();
+    match res.read_to_end(&mut file) {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(format!("error reading response: {}", e));
+        }
+    }
+    Ok(file)
+}
 
 fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     let dir = std::path::Path::new(dir);
@@ -436,12 +533,14 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
     let sw = window.clone();
     let ss: Vec<Show> = items.clone();
     let sset = settings.clone();
+    let spp = poster_picker.clone();
+    let sne = name_entry.clone();
     save_button.connect_clicked(move |_| {
         let mut items = ss.clone();
-        items[i].name = name_entry.get_text().unwrap();
+        items[i].name = sne.get_text().unwrap();
         items[i].path = path_picker.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
-        items[i].poster_path = poster_picker.get_filename().unwrap().as_path()
+        items[i].poster_path = spp.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
         items[i].current_ep = match (&curr_entry.get_text().unwrap()).parse::<i32>() {
             Ok(n) => n,
@@ -456,6 +555,60 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
         save_db(&sset, &items);
 
         view_screen(&sw, &items, i, &sset);
+    });
+
+    let fpp = poster_picker.clone();
+    let fne = name_entry.clone();
+    fetch_image_button.connect_clicked(move |_| {
+        let ref name = fne.get_text().unwrap();
+        let url = format!("{}search/multi?query={}&{}", TMDB, name, TMDB_KEY);
+        println!("url: {}", url);
+        let parsed = match json_get(&url) {
+            Ok(text) => text,
+            Err(e) => {
+                // TODO: gtk dialog
+                println!("{}", e);
+                return;
+            }
+        };
+        if parsed["results"].is_null() {
+            println!("no results array");
+            return;
+        }
+        let tmdb_base_url = match get_tmdb_base_url() {
+            Ok(a) => a,
+            Err(e) => {
+                // TODO: gtk dialog
+                println!("can't get tmdb base url: {}", e);
+                return;
+            }
+        };
+        for r in parsed["results"].members() {
+            let ref path = r["poster_path"];
+            if path.is_null() {
+                continue;
+            }
+            let path = match path.as_str() {
+                Some(x) => x,
+                None => continue
+            };
+            let image_url = format!("{}original{}", tmdb_base_url, path);
+            println!("{}", image_url);
+            let image_file = match https_get_bin(&image_url) {
+                Ok(a) => a,
+                Err(e) => {
+                    // TODO: gtk dialog
+                    println!("error downloading image: {}", e);
+                    return;
+                }
+            };
+            let file_name = Regex::new(r".*/").unwrap().replace(&image_url, "").into_owned();
+
+            let mut file = File::create(file_name.clone()).unwrap();
+            file.write_all(&image_file).unwrap();
+            fpp.set_filename(file_name);
+            break;
+        }
     });
 
     window.show_all();
@@ -675,7 +828,7 @@ fn load_db() -> WeebDB {
         }
         Ok(_) => ()
     }
-    match json::decode(&s) {
+    match rsjson::decode(&s) {
         Ok(a) => a,
         Err(e) => {
             println!("error decoding db json: {}", e.to_string());
@@ -691,8 +844,9 @@ fn save_db(settings: &Settings, items: &Vec<Show>) {
     };
     // TODO: rotate file for safety
     // what happens if the process is killed mid-write?
-    let encoded = json::as_pretty_json(&db);
+    let encoded = rsjson::as_pretty_json(&db);
     //println!("{}", encoded);
+    // TODO: handle errors
     let mut file = File::create("fw-rs-db.json").unwrap();
     file.write_all(format!("{}\n", encoded).as_bytes()).unwrap();
 }
