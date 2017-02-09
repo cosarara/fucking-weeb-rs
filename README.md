@@ -41,4 +41,5 @@ Things I'm missing:
 * Using the XDG directories
 * Error dialogs
 * Search
+* Nice titles
 
