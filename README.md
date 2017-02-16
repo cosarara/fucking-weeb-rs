@@ -37,6 +37,5 @@ Things I'm missing:
 * Autoplay
 * Auto filling in the Add form
 * Importing databases from the original format
-* Using the XDG directories
 * Error dialogs
 
