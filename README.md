@@ -33,7 +33,6 @@ Progress
 Things I'm missing:
 
 * Drag and drop
-* CSS
 * Autoplay
 * Auto filling in the Add form
 * Importing databases from the original format

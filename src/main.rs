@@ -835,6 +835,18 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     let search_box = Box::new(Orientation::Horizontal, 0);
     main_box.pack_start(&search_box, false, true, 5);
     let search_bar = SearchEntry::new();
+    let search_css_provider = gtk::CssProvider::new();
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
+    let search_css_path = match xdg_dirs.find_data_file("search.css") {
+        Some(p) => p.as_path().to_str().unwrap().to_owned(),
+        None => "search.css".to_owned()
+    };
+    search_css_provider.load_from_path(&search_css_path).unwrap();
+    let search_bar_style_context = search_bar.get_style_context().unwrap();
+    search_bar_style_context.add_provider(&search_css_provider,
+                                          gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+
     search_box.pack_start(&search_bar, true, true, 5);
     let add_button = Button::new_from_icon_name(
         "gtk-add", IconSize::Button.into());
