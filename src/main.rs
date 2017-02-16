@@ -415,7 +415,8 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
     window.show_all();
 }
 
-fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &Settings) {
+fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
+               settings: &Settings) {
     let orig_items = items.clone();
     let mut adding = false;
     let mut items = items.clone();
@@ -618,7 +619,8 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
                     return;
                 }
             };
-            let file_name = Regex::new(r".*/").unwrap().replace(&image_url, "").into_owned();
+            let file_name = Regex::new(r".*/").unwrap().
+                replace(&image_url, "").into_owned();
 
             let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
             let path = xdg_dirs.place_data_file(file_name.clone())
@@ -649,10 +651,14 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
         let path = fspp.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
         if fsne.get_text().unwrap() == "" {
-            let dir_name = Regex::new(r".*/").unwrap().replace(&path, "").into_owned();
-            let name = Regex::new(r"\[.*?\]").unwrap().replace_all(&dir_name, " ").into_owned();
-            let name = Regex::new(r"_|-|\\.|[[:space:]]").unwrap().replace_all(&name, " ").into_owned();
-            let name = Regex::new(r" +").unwrap().replace_all(&name, " ").into_owned();
+            let dir_name = Regex::new(r".*/").unwrap().
+                replace(&path, "").into_owned();
+            let name = Regex::new(r"\[.*?\]").unwrap().
+                replace_all(&dir_name, " ").into_owned();
+            let name = Regex::new(r"_|-|\\.|[[:space:]]").unwrap().
+                replace_all(&name, " ").into_owned();
+            let name = Regex::new(r" +").unwrap().
+                replace_all(&name, " ").into_owned();
             let name = name.trim();
 
             // stolen from the internetz
@@ -660,8 +666,8 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
                 let mut c = s.chars();
                 match c.next() {
                     None => String::new(),
-                    Some(f) => f.to_uppercase().chain(c.flat_map(|t| t.to_lowercase())).collect(),
-
+                    Some(f) => f.to_uppercase().chain(
+                        c.flat_map(|t| t.to_lowercase())).collect(),
                 }
             }
             let name_words = name.split(' ').map(title_case_word).collect::<Vec<_>>();
