@@ -23,6 +23,7 @@ extern crate rustc_serialize;
 extern crate regex;
 extern crate hyper;
 extern crate hyper_native_tls;
+extern crate xdg;
 
 // yes we have 2 different jsons k
 #[macro_use]
@@ -618,7 +619,11 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
             };
             let file_name = Regex::new(r".*/").unwrap().replace(&image_url, "").into_owned();
 
-            let mut file = match File::create(file_name.clone()) {
+            let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
+            let path = xdg_dirs.place_data_file(file_name.clone())
+                          .expect("cannot create data directory");
+
+            let mut file = match File::create(path) {
                 Ok(f) => f,
                 Err(e) => {
                     println!("error opening image file for writing: {}", e);
@@ -863,7 +868,16 @@ fn load_db() -> WeebDB {
         ],
     };
 
-    let mut file = match File::open("fw-rs-db.json") {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
+    let config_path = match xdg_dirs.find_config_file("fw-rs-db.json") {
+        None => {
+            println!("db file not found");
+            return default_settings;
+        },
+        Some(path) => path
+    };
+
+    let mut file = match File::open(config_path) {
         Err(e) => {
             println!("error opening db file: {}", e.to_string());
             return default_settings;
@@ -897,7 +911,10 @@ fn save_db(settings: &Settings, items: &Vec<Show>) {
     let encoded = rsjson::as_pretty_json(&db);
     //println!("{}", encoded);
     // TODO: handle errors
-    let mut file = File::create("fw-rs-db.json").unwrap();
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
+    let config_path = xdg_dirs.place_config_file("fw-rs-db.json")
+                          .expect("cannot create configuration directory");
+    let mut file = File::create(config_path).expect("cannot create db file");
     match file.write_all(format!("{}\n", encoded).as_bytes()) {
         Ok(_) => (),
         Err(e) => {
