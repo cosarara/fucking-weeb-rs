@@ -265,6 +265,12 @@ fn watch(show: &Show, player: &str) {
     }
 }
 
+fn make_title_label(text: &str) -> Label {
+    let label = Label::new(None);
+    label.set_markup(&format!("<span weight='bold' size='xx-large'>{}</span>", text));
+    label
+}
+
 fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings) {
     let show = items[i].clone();
     if let Some(child) = window.get_child() {
@@ -280,7 +286,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // HEADER
     let title_box = Box::new(Orientation::Horizontal, 0);
-    let title_label = Label::new(Some(&show.name));
+    let title_label = make_title_label(&show.name);
     title_box.set_center_widget(Some(&title_label));
     main_box.pack_start(&title_box, false, true, 5);
 
@@ -765,8 +771,7 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
 
     // TITLE AND SETTINGS BUTTON
     let title_box = Box::new(Orientation::Horizontal, 0);
-    // TODO fonts
-    let title_label = Label::new(Some(APP_TITLE));
+    let title_label = make_title_label(APP_TITLE);
     title_box.set_center_widget(Some(&title_label));
 
     let settings_button = Button::new_from_icon_name(
