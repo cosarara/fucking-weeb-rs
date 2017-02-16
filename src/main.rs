@@ -541,11 +541,12 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
     let ss: Vec<Show> = items.clone();
     let sset = settings.clone();
     let spp = poster_picker.clone();
+    let spap = path_picker.clone();
     let sne = name_entry.clone();
     save_button.connect_clicked(move |_| {
         let mut items = ss.clone();
         items[i].name = sne.get_text().unwrap();
-        items[i].path = path_picker.get_filename().unwrap().as_path()
+        items[i].path = spap.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
         items[i].poster_path = spp.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
@@ -627,6 +628,34 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
             }
             fpp.set_filename(file_name);
             break;
+        }
+    });
+
+    let fsne = name_entry.clone();
+    let fspp = path_picker.clone();
+    path_picker.connect_file_set(move |_| {
+        let path = fspp.get_filename().unwrap().as_path()
+            .to_str().unwrap().to_string();
+        if fsne.get_text().unwrap() == "" {
+            let dir_name = Regex::new(r".*/").unwrap().replace(&path, "").into_owned();
+            let name = Regex::new(r"\[.*?\]").unwrap().replace_all(&dir_name, " ").into_owned();
+            let name = Regex::new(r"_|-|\\.|[[:space:]]").unwrap().replace_all(&name, " ").into_owned();
+            let name = Regex::new(r" +").unwrap().replace_all(&name, " ").into_owned();
+            let name = name.trim();
+
+            // stolen from the internetz
+            fn title_case_word(s: &str) -> String {
+                let mut c = s.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().chain(c.flat_map(|t| t.to_lowercase())).collect(),
+
+                }
+            }
+            let name_words = name.split(' ').map(title_case_word).collect::<Vec<_>>();
+            let name: String = name_words.join(" ");
+
+            fsne.set_text(&name);
         }
     });
 
