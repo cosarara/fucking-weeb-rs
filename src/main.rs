@@ -287,6 +287,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
     // HEADER
     let title_box = Box::new(Orientation::Horizontal, 0);
     let title_label = make_title_label(&show.name);
+    title_label.set_selectable(true);
     title_box.set_center_widget(Some(&title_label));
     main_box.pack_start(&title_box, false, true, 5);
 
