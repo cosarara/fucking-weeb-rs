@@ -265,6 +265,12 @@ fn watch(show: &Show, player: &str) {
     }
 }
 
+fn make_title_label(text: &str) -> Label {
+    let label = Label::new(None);
+    label.set_markup(&format!("<span weight='bold' size='xx-large'>{}</span>", text));
+    label
+}
+
 fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings) {
     let show = items[i].clone();
     if let Some(child) = window.get_child() {
@@ -280,7 +286,8 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // HEADER
     let title_box = Box::new(Orientation::Horizontal, 0);
-    let title_label = Label::new(Some(&show.name));
+    let title_label = make_title_label(&show.name);
+    title_label.set_selectable(true);
     title_box.set_center_widget(Some(&title_label));
     main_box.pack_start(&title_box, false, true, 5);
 
@@ -725,62 +732,22 @@ fn settings_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     window.show_all();
 }
 
-fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
-    if let Some(child) = window.get_child() {
+fn build_poster_list(window: &Window, button_box: &FlowBox,
+                     items: &Vec<Show>, settings: &Settings,
+                     filter: &str) {
+
+    for child in button_box.get_children() {
         child.destroy();
     };
 
-    let main_box = Box::new(Orientation::Vertical, 20);
-    main_box.set_margin_top(20);
-    main_box.set_margin_start(20);
-    main_box.set_margin_end(20);
-    main_box.set_margin_bottom(20);
-
-    // TITLE AND SETTINGS BUTTON
-    let title_box = Box::new(Orientation::Horizontal, 0);
-    // TODO fonts
-    let title_label = Label::new(Some(APP_TITLE));
-    title_box.set_center_widget(Some(&title_label));
-
-    let settings_button = Button::new_from_icon_name(
-        "gtk-preferences", IconSize::Button.into());
-
-    let sw = window.clone();
-    let sitems: Vec<Show> = items.clone();
-    let sset = settings.clone();
-    settings_button.connect_clicked(move |_| {
-        settings_screen(&sw, &sitems, &sset);
-    });
-
-    //let button = Button::new_with_label("Click me!");
-    title_box.pack_end(&settings_button, false, true, 0);
-    main_box.pack_start(&title_box, false, true, 5);
-    //main_box.pack_start(&button, false, true, 5);
-
-    // SEARCH BAR
-    // TODO css
-    let search_box = Box::new(Orientation::Horizontal, 0);
-    main_box.pack_start(&search_box, false, true, 5);
-    let search_bar = SearchEntry::new();
-    search_box.pack_start(&search_bar, true, true, 5);
-    // TODO connect search bar
-    let add_button = Button::new_from_icon_name(
-        "gtk-add", IconSize::Button.into());
-    search_box.pack_start(&add_button, false, true, 0);
-    // TODO connect add button
-
-    let scrolled_window = ScrolledWindow::new(None, None);
-    main_box.pack_start(&scrolled_window, true, true, 0);
-
-    let viewport = Viewport::new(None, None);
-    scrolled_window.add(&viewport);
-
-    // POSTERS
-    let button_box = FlowBox::new();
-    button_box.set_selection_mode(SelectionMode::None);
-    viewport.add(&button_box);
-
+    let re = match Regex::new(&format!("(?i){}", filter)) {
+        Ok(r) => r,
+        Err(_) => Regex::new("").unwrap() // TODO: tell the user
+    };
     for (index, item) in items.iter().enumerate() {
+        if !re.is_match(&item.name) {
+            continue;
+        }
         let cover_event_box = EventBox::new();
         cover_event_box.set_events(
             gdk_sys::GDK_BUTTON_PRESS_MASK.bits() as i32);
@@ -819,12 +786,76 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
 
         button_box.insert(&cover_event_box, -1);
     }
+}
+
+fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
+    if let Some(child) = window.get_child() {
+        child.destroy();
+    };
+
+    let main_box = Box::new(Orientation::Vertical, 20);
+    main_box.set_margin_top(20);
+    main_box.set_margin_start(20);
+    main_box.set_margin_end(20);
+    main_box.set_margin_bottom(20);
+
+    // TITLE AND SETTINGS BUTTON
+    let title_box = Box::new(Orientation::Horizontal, 0);
+    let title_label = make_title_label(APP_TITLE);
+    title_box.set_center_widget(Some(&title_label));
+
+    let settings_button = Button::new_from_icon_name(
+        "gtk-preferences", IconSize::Button.into());
+
+    let sw = window.clone();
+    let sitems: Vec<Show> = items.clone();
+    let sset = settings.clone();
+    settings_button.connect_clicked(move |_| {
+        settings_screen(&sw, &sitems, &sset);
+    });
+
+    //let button = Button::new_with_label("Click me!");
+    title_box.pack_end(&settings_button, false, true, 0);
+    main_box.pack_start(&title_box, false, true, 5);
+    //main_box.pack_start(&button, false, true, 5);
+
+    // SEARCH BAR
+    // TODO css
+    let search_box = Box::new(Orientation::Horizontal, 0);
+    main_box.pack_start(&search_box, false, true, 5);
+    let search_bar = SearchEntry::new();
+    search_box.pack_start(&search_bar, true, true, 5);
+    let add_button = Button::new_from_icon_name(
+        "gtk-add", IconSize::Button.into());
+    search_box.pack_start(&add_button, false, true, 0);
+
+    let scrolled_window = ScrolledWindow::new(None, None);
+    main_box.pack_start(&scrolled_window, true, true, 0);
+
+    let viewport = Viewport::new(None, None);
+    scrolled_window.add(&viewport);
+
+    // POSTERS
+    let button_box = FlowBox::new();
+    button_box.set_selection_mode(SelectionMode::None);
+    viewport.add(&button_box);
+
+    build_poster_list(&window, &button_box, &items, &settings, "");
 
     let aw = window.clone();
     let ai: Vec<Show> = items.clone();
     let aset = settings.clone();
     add_button.connect_clicked(move |_| {
         edit_screen(&aw, &ai, None, &aset);
+    });
+
+    let sw = window.clone();
+    let si: Vec<Show> = items.clone();
+    let sbb = button_box.clone();
+    let sset = settings.clone();
+    search_bar.connect_search_changed(move |ref search_entry| {
+        build_poster_list(&sw, &sbb, &si, &sset, &search_entry.get_text().unwrap());
+        sw.show_all();
     });
 
     // MAIN
