@@ -624,7 +624,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
             let path = xdg_dirs.place_data_file(file_name.clone())
                           .expect("cannot create data directory");
 
-            let mut file = match File::create(path) {
+            let mut file = match File::create(path.clone()) {
                 Ok(f) => f,
                 Err(e) => {
                     println!("error opening image file for writing: {}", e);
@@ -638,7 +638,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>, settings: &
                     return;
                 }
             }
-            fpp.set_filename(file_name);
+            fpp.set_filename(path);
             break;
         }
     });
