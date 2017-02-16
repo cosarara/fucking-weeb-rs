@@ -39,6 +39,5 @@ Things I'm missing:
 * Importing databases from the original format
 * Using the XDG directories
 * Error dialogs
-* Search
 * Nice titles
 
