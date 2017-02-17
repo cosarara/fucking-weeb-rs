@@ -7,6 +7,9 @@ authors = ["Jaume Delclòs Coll <cosarara97@gmail.com>"]
 version = "0.1.1"
 features = ["v3_16"]
 
+[dependencies.gtk-sys]
+version = "0.3.2"
+
 [dependencies.gdk]
 version = "0.5.1"
 
@@ -14,6 +17,9 @@ version = "0.5.1"
 version = "0.3.2"
 
 [dependencies.gdk-pixbuf]
+version = "0.1.1"
+
+[dependencies.glib]
 version = "0.1.1"
 
 [dependencies.rustc-serialize]

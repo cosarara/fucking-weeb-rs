@@ -17,8 +17,10 @@
 // along with Fucking Weeb.  If not, see <http://www.gnu.org/licenses/>.
 
 extern crate gtk;
+extern crate gtk_sys;
 extern crate gdk_sys;
 extern crate gdk_pixbuf;
+extern crate glib;
 extern crate rustc_serialize;
 extern crate regex;
 extern crate hyper;
@@ -41,6 +43,8 @@ use gtk::{Button, Window, WindowType, Box, Orientation,
     FlowBox, SelectionMode, EventBox, Image};
 
 use gdk_pixbuf::Pixbuf;
+
+use glib::translate::ToGlibPtr;
 
 use std::io::prelude::*;
 use std::fs;
@@ -266,6 +270,26 @@ fn watch(show: &Show, player: &str) {
     }
 }
 
+// WTF
+#[repr(C)]
+pub struct StaticCString(*const u8);
+unsafe impl Sync for StaticCString {}
+
+#[no_mangle]
+pub static CONST_C_STR: StaticCString =
+    StaticCString(b"text/plain\0" as *const u8);
+
+//static mut dnd_target_entry_str: vec<i8> = b"text/plain";
+
+//unsafe {
+    static mut DND_TARGET_ENTRY: gtk_sys::GtkTargetEntry =
+    gtk_sys::GtkTargetEntry {
+        target: StaticCString as *mut i8,
+        flags: 0,
+        info: 0,
+    };
+//}
+
 fn make_title_label(text: &str) -> Label {
     let label = Label::new(None);
     label.set_markup(&format!("<span weight='bold' size='xx-large'>{}</span>", text));
@@ -304,9 +328,16 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // cover
     let cover_event_box = EventBox::new();
-    cover_event_box.set_events(
-        gdk_sys::GDK_BUTTON_PRESS_MASK.bits() as i32);
-
+    unsafe {
+        gtk_sys::gtk_drag_dest_set(cover_event_box.to_glib_none().0,
+                                   gtk_sys::GTK_DEST_DEFAULT_ALL,
+                                   &mut DND_TARGET_ENTRY,
+                                   1,
+                                   gdk_sys::GDK_ACTION_COPY);
+    };
+    cover_event_box.connect_drag_data_received(|_, _, _, _, _, _, _| {
+        println!("yay!");
+    });
 
     // TODO: use cairo here, to have it resize automagically
     let image = match Pixbuf::new_from_file_at_size(
