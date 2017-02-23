@@ -54,6 +54,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use regex::Regex;
 
+use std::ffi::CString;
+//use std::os::raw::c_char;
+
 use hyper_native_tls::{NativeTlsClient, native_tls};
 
 #[derive(RustcDecodable, RustcEncodable, Clone)]
@@ -176,6 +179,35 @@ fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
     Ok(file)
 }
 
+fn download_image(image_url: &str) -> Result<String, String> {
+    let image_file = match https_get_bin(&image_url) {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(format!("error downloading image: {}", e));
+        }
+    };
+    let file_name = Regex::new(r".*/").unwrap().
+        replace(&image_url, "").into_owned();
+
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
+    let path = xdg_dirs.place_data_file(file_name.clone())
+        .expect("cannot create data directory");
+
+    let mut file = match File::create(path.clone()) {
+        Ok(f) => f,
+        Err(e) => {
+            return Err(format!("error opening image file for writing: {}", e));
+        }
+    };
+    match file.write_all(&image_file) {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(format!("error saving image: {}", e));
+        }
+    }
+    return Ok(path.to_str().unwrap().to_string());
+}
+
 fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     let dir = std::path::Path::new(dir);
     if !dir.is_dir() {
@@ -271,29 +303,73 @@ fn watch(show: &Show, player: &str) {
 }
 
 // WTF
-#[repr(C)]
-pub struct StaticCString(*const u8);
-unsafe impl Sync for StaticCString {}
-
-#[no_mangle]
-pub static CONST_C_STR: StaticCString =
-    StaticCString(b"text/plain\0" as *const u8);
+//#[repr(C)]
+//pub struct StaticCString(*mut u8);
+//unsafe impl Sync for StaticCString {}
+//
+//#[no_mangle]
+//pub static CONST_C_STR: StaticCString =
+//    StaticCString(b"text/plain\0" as *const u8);
 
 //static mut dnd_target_entry_str: vec<i8> = b"text/plain";
 
 //unsafe {
+/*
     static mut DND_TARGET_ENTRY: gtk_sys::GtkTargetEntry =
     gtk_sys::GtkTargetEntry {
         target: StaticCString as *mut i8,
         flags: 0,
         info: 0,
     };
+    */
+//}
+
+//static c_to_print: CString = CString::new("Hello, world!").unwrap();
+//const CONST_C_STR: &'static [u8] = b"a constant c string\n\0";
+//const CONST_C_STR: &'static [u8] = b"a constant c string\n\0";
+//lazy_static! {
+//    static ref DND_TARGET_ENTRY: gtk_sys::GtkTargetEntry =
+//        gtk_sys::GtkTargetEntry {
+//            target: unsafe { CONST_C_STR.as_ptr() as *mut i8 },
+//            flags: 0,
+//            info: 0,
+//        };
 //}
 
 fn make_title_label(text: &str) -> Label {
     let label = Label::new(None);
     label.set_markup(&format!("<span weight='bold' size='xx-large'>{}</span>", text));
     label
+}
+
+fn drop_cover(items: &Vec<Show>, i: usize, settings: &Settings,
+              text: &str) -> Vec<Show> {
+    let re = Regex::new("(.*)://(.*)").unwrap();
+    if re.find(&text).is_none() {
+        return items.clone();
+    }
+    let caps = re.captures(&text).unwrap();
+    let protocol = &caps[1];
+    let path = &caps[2];
+    println!("protocol: {}", protocol);
+    println!("body: {}", path);
+    let mut shows = items.clone();
+    if protocol == "file" {
+        shows[i].poster_path = path.to_string();
+    } else if protocol == "http" || protocol == "https" {
+        let lpath = match download_image(&text) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("{}", e);
+                return items.clone();
+            }
+        };
+        shows[i].poster_path = lpath;
+    } else {
+        return items.clone();
+    }
+    save_db(&settings, &shows);
+    return shows;
 }
 
 fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings) {
@@ -328,16 +404,21 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // cover
     let cover_event_box = EventBox::new();
+    let c_string = CString::new("text/plain").unwrap();
+    let mut dnd_target_entry =
+        gtk_sys::GtkTargetEntry {
+            target: c_string.as_ptr() as *mut i8,
+            flags: 0,
+            info: 0,
+        };
+    // is this bad?
     unsafe {
         gtk_sys::gtk_drag_dest_set(cover_event_box.to_glib_none().0,
                                    gtk_sys::GTK_DEST_DEFAULT_ALL,
-                                   &mut DND_TARGET_ENTRY,
+                                   &mut dnd_target_entry,
                                    1,
                                    gdk_sys::GDK_ACTION_COPY);
     };
-    cover_event_box.connect_drag_data_received(|_, _, _, _, _, _, _| {
-        println!("yay!");
-    });
 
     // TODO: use cairo here, to have it resize automagically
     let image = match Pixbuf::new_from_file_at_size(
@@ -441,6 +522,18 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         let mut items = vcitems.clone();
         items[i].current_ep = ep;
         save_db(&vcset, &items);
+    });
+
+    let cew = window.clone();
+    let ceitems = items.clone();
+    let ceset = settings.clone();
+    cover_event_box.connect_drag_data_received(move |_, _, _, _, data, _, _| {
+        let text = match data.get_text() {
+            Some(text) => text,
+            None => { return; }
+        };
+        let shows = drop_cover(&ceitems, i, &ceset, &text);
+        view_screen(&cew, &shows, i, &ceset);
     });
 
     window.show_all();
@@ -642,35 +735,14 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
             };
             let image_url = format!("{}original{}", tmdb_base_url, path);
             println!("{}", image_url);
-            let image_file = match https_get_bin(&image_url) {
-                Ok(a) => a,
+            let path = match download_image(&image_url) {
+                Ok(path) => path,
                 Err(e) => {
                     // TODO: gtk dialog
-                    println!("error downloading image: {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
-            let file_name = Regex::new(r".*/").unwrap().
-                replace(&image_url, "").into_owned();
-
-            let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-            let path = xdg_dirs.place_data_file(file_name.clone())
-                          .expect("cannot create data directory");
-
-            let mut file = match File::create(path.clone()) {
-                Ok(f) => f,
-                Err(e) => {
-                    println!("error opening image file for writing: {}", e);
-                    return;
-                }
-            };
-            match file.write_all(&image_file) {
-                Ok(_) => (),
-                Err(e) => {
-                    println!("error saving image: {}", e);
-                    return;
-                }
-            }
             fpp.set_filename(path);
             break;
         }
@@ -786,6 +858,15 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         Ok(r) => r,
         Err(_) => Regex::new("").unwrap() // TODO: tell the user
     };
+
+    let c_string = CString::new("text/plain").unwrap();
+    let mut dnd_target_entry =
+        gtk_sys::GtkTargetEntry {
+            target: c_string.as_ptr() as *mut i8,
+            flags: 0,
+            info: 0,
+        };
+
     for (index, item) in items.iter().enumerate() {
         if !re.is_match(&item.name) {
             continue;
@@ -797,6 +878,14 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         let cover_box = Box::new(Orientation::Vertical, 0);
         cover_event_box.add(&cover_box);
         cover_box.set_size_request(100, 200);
+
+        unsafe {
+            gtk_sys::gtk_drag_dest_set(cover_event_box.to_glib_none().0,
+            gtk_sys::GTK_DEST_DEFAULT_ALL,
+            &mut dnd_target_entry,
+            1,
+            gdk_sys::GDK_ACTION_COPY);
+        };
 
         // TODO: how do I unref?
         let image = match Pixbuf::new_from_file_at_size(
@@ -819,11 +908,22 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
 
         let w = window.clone();
         let s: Vec<Show> = items.clone();
-        let i = index;
         let set = settings.clone();
         cover_event_box.connect_button_press_event(move |_, _| {
-            view_screen(&w, &s, i, &set);
+            view_screen(&w, &s, index, &set);
             Inhibit(false)
+        });
+
+        let cew = window.clone();
+        let ceitems = items.clone();
+        let ceset = settings.clone();
+        cover_event_box.connect_drag_data_received(move |_, _, _, _, data, _, _| {
+            let text = match data.get_text() {
+                Some(text) => text,
+                None => { return; }
+            };
+            let shows = drop_cover(&ceitems, index, &ceset, &text);
+            main_screen(&cew, &shows, &ceset);
         });
 
         button_box.insert(&cover_event_box, -1);
