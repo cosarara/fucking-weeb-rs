@@ -972,7 +972,10 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
         Some(p) => p.as_path().to_str().unwrap().to_owned(),
         None => "search.css".to_owned()
     };
-    search_css_provider.load_from_path(&search_css_path).unwrap();
+    match search_css_provider.load_from_path(&search_css_path) {
+        Err(e) => println!("error loading css: {}", e),
+        Ok(_) => ()
+    }
     let search_bar_style_context = search_bar.get_style_context().unwrap();
     search_bar_style_context.add_provider(&search_css_provider,
                                           gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
