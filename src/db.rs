@@ -19,29 +19,43 @@
 use xdg;
 use std::fs::File;
 use std::io::prelude::*;
+use serde_json;
 
-use rustc_serialize::json as rsjson;
-
-
-#[derive(RustcDecodable, RustcEncodable, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Show {
     pub name: String,
     pub path: String,
     pub poster_path: String,
     pub current_ep: i32,
     pub total_eps: i32,
+    #[serde(default)]
     pub regex: String,
+    #[serde(default)]
     pub player: String,
 }
 
-#[derive(RustcDecodable, RustcEncodable, Clone)]
+impl Default for Show {
+    fn default() -> Show {
+        Show {
+            name: "".to_string(),
+            path: "".to_string(),
+            poster_path: "".to_string(),
+            current_ep: 1,
+            total_eps: 24,
+            regex: "".to_string(),
+            player: "".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub player: String,
     pub path: String,
     pub autoplay: bool,
 }
 
-#[derive(RustcDecodable, RustcEncodable, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WeebDB {
     pub settings: Settings,
     pub shows: Vec<Show>,
@@ -100,7 +114,7 @@ pub fn load_db() -> WeebDB {
         }
         Ok(_) => ()
     }
-    match rsjson::decode(&s) {
+    match serde_json::from_str(&s) {
         Ok(a) => a,
         Err(e) => {
             println!("error decoding db json: {}", e.to_string());
@@ -116,7 +130,8 @@ pub fn save_db(settings: &Settings, items: &Vec<Show>) {
     };
     // TODO: rotate file for safety
     // what happens if the process is killed mid-write?
-    let encoded = rsjson::as_pretty_json(&db);
+    //let encoded = rsjson::as_pretty_json(&db);
+    let encoded = serde_json::to_string(&db).unwrap();
     //println!("{}", encoded);
     // TODO: handle errors
     let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();

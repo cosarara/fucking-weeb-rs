@@ -21,9 +21,12 @@ extern crate gtk_sys;
 extern crate gdk_sys;
 extern crate gdk_pixbuf;
 extern crate glib;
-extern crate rustc_serialize;
 extern crate regex;
 extern crate xdg;
+extern crate serde;
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 
 // TMDB
 extern crate hyper;
@@ -720,6 +723,9 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
             info: 0,
         };
 
+    let mut items = items.clone();
+    items.sort_by_key(|x| {x.name.clone()});
+
     for (index, item) in items.iter().enumerate() {
         if !re.is_match(&item.name) {
             continue;
@@ -757,6 +763,8 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         cover_box.pack_start(&image, false, true, 5);
 
         let l = Label::new(Some(&item.name));
+        l.set_line_wrap(true);
+        l.set_max_width_chars(18);
         cover_box.pack_start(&l, false, true, 5);
 
         let w = window.clone();
