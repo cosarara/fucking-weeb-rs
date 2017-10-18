@@ -23,18 +23,16 @@ extern crate gdk_pixbuf;
 extern crate glib;
 extern crate rustc_serialize;
 extern crate regex;
-extern crate hyper;
-extern crate hyper_native_tls;
 extern crate xdg;
 
+// TMDB
+extern crate hyper;
+extern crate hyper_native_tls;
 // yes we have 2 different jsons k
-#[macro_use]
 extern crate json;
 
 #[macro_use]
 extern crate lazy_static;
-
-use rustc_serialize::json as rsjson;
 
 use gtk::prelude::*;
 
@@ -46,9 +44,7 @@ use gdk_pixbuf::Pixbuf;
 
 use glib::translate::ToGlibPtr;
 
-use std::io::prelude::*;
 use std::fs;
-use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -57,156 +53,13 @@ use regex::Regex;
 use std::ffi::CString;
 //use std::os::raw::c_char;
 
-use hyper_native_tls::{NativeTlsClient, native_tls};
+mod db;
+use db::*;
 
-#[derive(RustcDecodable, RustcEncodable, Clone)]
-struct Show {
-    name: String,
-    path: String,
-    poster_path: String,
-    current_ep: i32,
-    total_eps: i32,
-    regex: String,
-    player: String,
-}
-
-#[derive(RustcDecodable, RustcEncodable, Clone)]
-struct Settings {
-    player: String,
-    path: String,
-    autoplay: bool,
-}
-
-#[derive(RustcDecodable, RustcEncodable, Clone)]
-struct WeebDB {
-    settings: Settings,
-    shows: Vec<Show>,
-}
+mod tmdb;
+use tmdb::*;
 
 static APP_TITLE: &'static str = "Fucking Weeb";
-static TMDB: &'static str = "https://api.themoviedb.org/3/";
-static TMDB_KEY: &'static str = "api_key=fd7b3b3e7939e8eb7c8e26836b8ea410";
-
-lazy_static! {
-    static ref TMDB_BASE_URL: Result<String, String> = get_tmdb_base_url();
-}
-
-fn make_https_client() -> native_tls::Result<hyper::client::Client> {
-    NativeTlsClient::new().map(
-        |ssl| {
-            let connector = hyper::net::HttpsConnector::new(ssl);
-            let client = hyper::client::Client::with_connector(connector);
-            client
-        })
-}
-
-fn https_get(url: &str) -> Result<String, String> {
-    let client = match make_https_client() {
-        Ok(ssl) => ssl,
-        Err(e) => {
-            return Err(format!("error creating https client: {}", e));
-        }
-    };
-    let req = client.get(url);
-    let mut res = match req.send() {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(format!("error making request: {}", e));
-        }
-    };
-    let mut text = String::new();
-    match res.read_to_string(&mut text) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error reading response: {}", e));
-        }
-    }
-    Ok(text)
-}
-
-fn json_get(url: &str) -> Result<json::JsonValue, String> {
-    let text = match https_get(url) {
-        Ok(text) => text,
-        Err(e) => {
-            return Err(e.to_string());
-        }
-    };
-    let parsed = match json::parse(&text) {
-        Ok(o) => o,
-        Err(e) => {
-            return Err(e.to_string());
-        },
-    };
-    Ok(parsed)
-}
-
-fn get_tmdb_base_url() -> Result<String, String> {
-    let url = format!("{}configuration?{}", TMDB, TMDB_KEY);
-    let parsed = match json_get(&url) {
-        Ok(text) => text,
-        Err(e) => {
-            return Err(e);
-        }
-    };
-    let ref json_tmdb_base_url = parsed["images"]["base_url"];
-    match json_tmdb_base_url.as_str().map(|x| x.to_string()) {
-        Some(a) => Ok(a),
-        None => Err("base_url string not found in json".to_string()),
-    }
-}
-
-fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
-    let client = match make_https_client() {
-        Ok(ssl) => ssl,
-        Err(e) => {
-            return Err(format!("error creating https client: {}", e));
-        }
-    };
-    let req = client.get(url);
-    let mut res = match req.send() {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(format!("error making request: {}", e));
-        }
-    };
-    let mut file = Vec::<u8>::new();
-    match res.read_to_end(&mut file) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error reading response: {}", e));
-        }
-    }
-    Ok(file)
-}
-
-fn download_image(image_url: &str) -> Result<String, String> {
-    let image_file = match https_get_bin(&image_url) {
-        Ok(a) => a,
-        Err(e) => {
-            return Err(format!("error downloading image: {}", e));
-        }
-    };
-    let file_name = Regex::new(r".*/").unwrap().
-        replace(&image_url, "").into_owned();
-
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let path = xdg_dirs.place_data_file(file_name.clone())
-        .expect("cannot create data directory");
-
-    let mut file = match File::create(path.clone()) {
-        Ok(f) => f,
-        Err(e) => {
-            return Err(format!("error opening image file for writing: {}", e));
-        }
-    };
-    match file.write_all(&image_file) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error saving image: {}", e));
-        }
-    }
-    return Ok(path.to_str().unwrap().to_string());
-}
 
 fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     let dir = std::path::Path::new(dir);
@@ -1018,90 +871,6 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     // MAIN
     window.add(&main_box);
     window.show_all();
-}
-
-fn load_db() -> WeebDB {
-    let default_settings = WeebDB {
-        settings: Settings {
-            player: "mpv".to_string(),
-            path: "".to_string(),
-            autoplay: false,
-        },
-        shows: vec![
-            Show {
-                name: "Ranma".to_string(),
-                path: "/home/jaume/videos/series/1-More/Ranma/".to_string(),
-                poster_path: "/home/jaume/.local/share/fucking-weeb/ranma.jpg".to_string(),
-                current_ep: 25,
-                total_eps: 150,
-                regex: " 0*{}[^0-9]".to_string(),
-                player: "".to_string(),
-            },
-            Show {
-                name: "Neon Genesis Evangelion".to_string(),
-                path: "/home/jaume/videos/series/0-Sorted/neon_genesis_evangelion-1080p-renewal_cat/".to_string(),
-                poster_path: "/home/jaume/.local/share/fucking-weeb/Neon%20Genesis%20Evangelion.jpg".to_string(),
-                current_ep: 5,
-                total_eps: 26,
-                regex: "".to_string(),
-                player: "".to_string(),
-            }
-        ],
-    };
-
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let config_path = match xdg_dirs.find_config_file("fw-rs-db.json") {
-        None => {
-            println!("db file not found");
-            return default_settings;
-        },
-        Some(path) => path
-    };
-
-    let mut file = match File::open(config_path) {
-        Err(e) => {
-            println!("error opening db file: {}", e.to_string());
-            return default_settings;
-        },
-        Ok(file) => file
-    };
-    let mut s = String::new();
-    match file.read_to_string(&mut s) {
-        Err(e) => {
-            println!("error reading db: {}", e.to_string());
-            return default_settings;
-        }
-        Ok(_) => ()
-    }
-    match rsjson::decode(&s) {
-        Ok(a) => a,
-        Err(e) => {
-            println!("error decoding db json: {}", e.to_string());
-            default_settings
-        }
-    }
-}
-
-fn save_db(settings: &Settings, items: &Vec<Show>) {
-    let db = WeebDB {
-        settings: settings.clone(),
-        shows: items.clone(),
-    };
-    // TODO: rotate file for safety
-    // what happens if the process is killed mid-write?
-    let encoded = rsjson::as_pretty_json(&db);
-    //println!("{}", encoded);
-    // TODO: handle errors
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let config_path = xdg_dirs.place_config_file("fw-rs-db.json")
-                          .expect("cannot create configuration directory");
-    let mut file = File::create(config_path).expect("cannot create db file");
-    match file.write_all(format!("{}\n", encoded).as_bytes()) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Error saving db: {}", e);
-        }
-    };
 }
 
 fn main() {
