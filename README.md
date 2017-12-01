@@ -12,7 +12,7 @@ Why?
 I wasn't having enough fun with CHICKEN,
 first of all because I'm a pretty bad scheme programmer,
 but also because I faced a couple bugs it had
-(which are solved in the upcoming release, 4.12.0).
+(which were later solved in version 4.12.0).
 
 Anyway, who doesn't love to rewrite stuff?
 The second time you write a program you do it better, and faster.
