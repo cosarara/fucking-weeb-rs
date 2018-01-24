@@ -41,7 +41,8 @@ use gtk::prelude::*;
 
 use gtk::{Button, Window, WindowType, Box, Orientation,
     Label, IconSize, SearchEntry, ScrolledWindow, Viewport,
-    FlowBox, SelectionMode, EventBox, Image};
+    FlowBox, SelectionMode, EventBox, Image, MessageDialog,
+    MessageType, DialogFlags, ButtonsType};
 
 use gdk_pixbuf::Pixbuf;
 
@@ -99,11 +100,15 @@ fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
 
     for r in regexes.iter().map(|x| x.replace("{}", &format!("{}", num))) {
         println!("{}", r);
-        let re = Regex::new(&r).unwrap();
+        let re = match Regex::new(&r) {
+            Ok(re) => re,
+            Err(e) => return Err(e.to_string())
+        };
         let mut best_match: Option<&Path> = None;
         let mut best_score = 0; // lower is better
         for file in files.iter().map(|x| x.as_path()) {
-            let file_name = file.to_str().unwrap();
+            //let file_name = file.to_str().unwrap();
+            let file_name = file.file_name().and_then(|s| s.to_str()).unwrap();
             match re.find(file_name) {
                 Some(mat) => {
                     //println!("{} matches at {}!", file_name, mat.start());
@@ -127,14 +132,14 @@ fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     Err("matching file not found".to_string())
 }
 
-fn watch(show: &Show, player: &str) {
+fn watch(show: &Show, player: &str) -> Result<(), String> {
     let ref dir = show.path;
     let ref reg = show.regex;
     let ep = show.current_ep.abs() as u32;
     let path = match find_ep(&dir, ep, &reg) {
         Err(e) => {
             println!("{}", e); // TODO: gtk dialog
-            return;
+            return Err(e);
         },
         Ok(path) => path
     };
@@ -153,9 +158,11 @@ fn watch(show: &Show, player: &str) {
     match cmd {
         Err(e) => {
             println!("{}", e); // TODO: gtk dialog
+            return Err(format!("{}", e));
         },
         Ok(_) => ()
     }
+    return Ok(());
 }
 
 // WTF
@@ -296,7 +303,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
     let spin = gtk::SpinButton::new(Some(&current_ep_adj), 0.0, 0);
     progress_box.pack_start(&spin, false, true, 5);
     let total_label_text = format!("/ {}", show.total_eps);
-    let total_label = Label::new(Some(&total_label_text));
+    let total_label = Label::new(Some(total_label_text.as_str()));
     progress_box.pack_start(&total_label, false, true, 5);
     progress_box.set_halign(gtk::Align::Center);
 
@@ -346,6 +353,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         edit_screen(&ew, &items, Some(i), &eset);
     });
 
+    let wbw = window.clone();
     let wspin = spin.clone();
     let wshow = show.clone();
     let wplayer = settings.player.clone();
@@ -353,9 +361,18 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         let ep = wspin.get_value_as_int();
         let mut show = wshow.clone();
         show.current_ep = ep;
-        watch(&show, &wplayer);
+        match watch(&show, &wplayer) {
+            Ok(_) => (),
+            Err(e) => {
+                let dialog = MessageDialog::new(Some(&wbw), DialogFlags::MODAL,
+                MessageType::Error, ButtonsType::Ok, &e);
+                dialog.run();
+                dialog.destroy();
+            }
+        };
     });
 
+    let wnbw = window.clone();
     let wnspin = spin.clone();
     let wnshow = show.clone();
     let wnplayer = settings.player.clone();
@@ -366,7 +383,15 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         let ep = if ep < max_ep { ep+1 } else { ep };
         wnspin.set_value(ep as f64);
         show.current_ep = ep;
-        watch(&show, &wnplayer);
+        match watch(&show, &wnplayer) {
+            Ok(_) => (),
+            Err(e) => {
+                let dialog = MessageDialog::new(Some(&wnbw), DialogFlags::MODAL,
+                MessageType::Error, ButtonsType::Ok, &e);
+                dialog.run();
+                dialog.destroy();
+            }
+        };
     });
 
     let vcspin = spin.clone();
@@ -469,7 +494,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
 
     let image_filter = gtk::FileFilter::new();
     image_filter.add_mime_type("image/*");
-    image_filter.set_name(Some("Image File"));
+    gtk::FileFilterExt::set_name(&image_filter, Some("Image File"));
     poster_picker.add_filter(&image_filter);
 
     let fetch_image_button = Button::new_with_label("Download");
@@ -762,7 +787,7 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         //
         cover_box.pack_start(&image, false, true, 5);
 
-        let l = Label::new(Some(&item.name));
+        let l = Label::new(Some(item.name.as_str()));
         l.set_line_wrap(true);
         l.set_max_width_chars(18);
         cover_box.pack_start(&l, false, true, 5);

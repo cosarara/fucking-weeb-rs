@@ -4,41 +4,41 @@ version = "0.1.0"
 authors = ["Jaume Delclòs Coll <cosarara97@gmail.com>"]
 
 [dependencies.gtk]
-version = "0.1.1"
+version = "0.3"
 features = ["v3_16"]
 
 [dependencies.gtk-sys]
-version = "0.3.2"
+version = "0.5"
 
 [dependencies.gdk]
-version = "0.5.1"
+version = "0.7"
 
 [dependencies.gdk-sys]
-version = "0.3.2"
+version = "0.5"
 
 [dependencies.gdk-pixbuf]
-version = "0.1.1"
+version = "0.3"
 
 [dependencies.glib]
-version = "0.1.1"
+version = "0.4"
 
 [dependencies.regex]
 version = "0.2"
 
 [dependencies.lazy_static]
-version = "0.2.2"
+version = "1.0"
 
 [dependencies.hyper]
 version = "0.10"
 
 [dependencies.hyper-native-tls]
-version = "0.2.2"
+version = "0.2"
 
 [dependencies.json]
-version = "0.11.5"
+version = "0.11"
 
 [dependencies.xdg]
-version = "^2.0"
+version = "^2.1"
 
 [dependencies.serde]
 version = "1.0"
