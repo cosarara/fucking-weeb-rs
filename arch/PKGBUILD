@@ -1,5 +1,6 @@
+# Maintainer: Jaume Delclòs (cosarara) <cosarara97@gmail.com>
 pkgname=weeb-rs-git
-pkgver=r35.8f34e68
+pkgver=r39.def4e05
 pkgrel=1
 pkgdesc="A library manager for anime and series - rust rewrite"
 arch=("i686" "x86_64")
@@ -19,10 +20,10 @@ pkgver() {
 
 build() {
 	cd "$srcdir/${pkgname%-git}"
-    cargo build --release
+	cargo build --release
 }
 
 package() {
 	cd "$srcdir/${pkgname%-git}"
-    install -D -m755 target/release/fucking-weeb-rs "$pkgdir/usr/bin/weeb"
+	install -D -m755 target/release/fucking-weeb-rs "$pkgdir/usr/bin/weeb"
 }
