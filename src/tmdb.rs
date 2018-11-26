@@ -45,7 +45,10 @@ fn get_tmdb_base_url() -> Result<String, String> {
 }
 
 fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
-    let mut resp = reqwest::get(url).map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(Some(core::time::Duration::new(5, 0)))
+        .build().map_err(|e| e.to_string())?;
+    let mut resp = client.get(url).send().map_err(|e| e.to_string())?;
     let mut buf: Vec<u8> = vec![];
     resp.copy_to(&mut buf)
         .map(|_| buf)
