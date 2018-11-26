@@ -63,22 +63,24 @@ use tmdb::*;
 
 static APP_TITLE: &'static str = "Fucking Weeb";
 
+fn gtk_err(window: &Window, message: &str) {
+    println!("{}", message);
+    let dialog = MessageDialog::new(Some(window), DialogFlags::MODAL,
+        MessageType::Error, ButtonsType::Ok, message);
+    dialog.run();
+    dialog.destroy();
+}
+
 fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
     let dir = std::path::Path::new(dir);
     if !dir.is_dir() {
         return Err("not a directory".to_string());
     }
-    // getting the iterator can error
-    let files = match fs::read_dir(dir) {
-        Ok(files) => files,
-        Err(e) => return Err(e.to_string())
-    };
-    // each iteration can error too
+    let files = fs::read_dir(dir)
+        .map_err(|e| e.to_string())?;
+    // gotta be separate cuz rust dumb
     let files: Result<Vec<_>, _> = files.collect();
-    let files = match files {
-        Ok(files) => files,
-        Err(e) => return Err(e.to_string())
-    };
+    let files = files.map_err(|e| e.to_string())?;
     println!("len: {}", files.len());
     if files.len() == 0 {
         return Err("nothing found".to_string());
@@ -98,10 +100,7 @@ fn find_ep(dir: &str, num: u32, regex: &str) -> Result<PathBuf, String> {
 
     for r in regexes.iter().map(|x| x.replace("{}", &format!("{}", num))) {
         println!("{}", r);
-        let re = match Regex::new(&r) {
-            Ok(re) => re,
-            Err(e) => return Err(e.to_string())
-        };
+        let re = Regex::new(&r).map_err(|e| e.to_string())?;
         let mut best_match: Option<&Path> = None;
         let mut best_score = 0; // lower is better
         for file in files.iter().map(|x| x.as_path()) {
@@ -134,13 +133,7 @@ fn watch(show: &Show, player: &str) -> Result<(), String> {
     let ref dir = show.path;
     let ref reg = show.regex;
     let ep = show.current_ep.abs() as u32;
-    let path = match find_ep(&dir, ep, &reg) {
-        Err(e) => {
-            println!("{}", e); // TODO: gtk dialog
-            return Err(e);
-        },
-        Ok(path) => path
-    };
+    let path = find_ep(&dir, ep, &reg)?;
     println!("{}", path.to_str().unwrap());
     let player_full_cmd = if show.player == "" { player } else { &show.player };
     let mut cmd_parts = player_full_cmd.split(' ');
@@ -153,14 +146,8 @@ fn watch(show: &Show, player: &str) -> Result<(), String> {
         .args(&player_args)
         .arg(path.to_str().unwrap())
         .spawn();
-    match cmd {
-        Err(e) => {
-            println!("{}", e); // TODO: gtk dialog
-            return Err(format!("{}", e));
-        },
-        Ok(_) => ()
-    }
-    return Ok(());
+    cmd.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // WTF
@@ -359,15 +346,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         let ep = wspin.get_value_as_int();
         let mut show = wshow.clone();
         show.current_ep = ep;
-        match watch(&show, &wplayer) {
-            Ok(_) => (),
-            Err(e) => {
-                let dialog = MessageDialog::new(Some(&wbw), DialogFlags::MODAL,
-                MessageType::Error, ButtonsType::Ok, &e);
-                dialog.run();
-                dialog.destroy();
-            }
-        };
+        watch(&show, &wplayer).unwrap_or_else(|e| gtk_err(&wbw, &e));
     });
 
     let wnbw = window.clone();
@@ -381,15 +360,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
         let ep = if ep < max_ep { ep+1 } else { ep };
         wnspin.set_value(ep as f64);
         show.current_ep = ep;
-        match watch(&show, &wnplayer) {
-            Ok(_) => (),
-            Err(e) => {
-                let dialog = MessageDialog::new(Some(&wnbw), DialogFlags::MODAL,
-                MessageType::Error, ButtonsType::Ok, &e);
-                dialog.run();
-                dialog.destroy();
-            }
-        };
+        watch(&show, &wnplayer).unwrap_or_else(|e| gtk_err(&wnbw, &e));
     });
 
     let vcspin = spin.clone();
@@ -416,6 +387,36 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
     });
 
     window.show_all();
+}
+
+fn fetch_image(name: &str) -> Result<String, String> {
+    let url = format!("{}search/multi?query={}&{}", TMDB, name, TMDB_KEY);
+    println!("url: {}", url);
+    let parsed = json_get(&url).map_err(|e| e.to_string())?;
+    if parsed["results"].is_null() {
+        return Err("no results array".to_string());
+    }
+    let tmdb_base_url = match *TMDB_BASE_URL {
+        Ok(ref a) => a,
+        Err(ref e) => {
+            return Err(format!("can't get tmdb base url: {}", e));
+        }
+    };
+    for r in parsed["results"].members() {
+        let ref path = r["poster_path"];
+        if path.is_null() {
+            continue;
+        }
+        let path = match path.as_str() {
+            Some(x) => x,
+            None => continue
+        };
+        let image_url = format!("{}original{}", tmdb_base_url, path);
+        println!("{}", image_url);
+        let path = download_image(&image_url).map_err(|e| e.to_string())?;
+        return Ok(path);
+    }
+    return Err("Image not found".to_string());
 }
 
 fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
@@ -579,52 +580,13 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
 
     let fpp = poster_picker.clone();
     let fne = name_entry.clone();
+    let fw = window.clone();
     fetch_image_button.connect_clicked(move |_| {
         let ref name = fne.get_text().unwrap();
-        let url = format!("{}search/multi?query={}&{}", TMDB, name, TMDB_KEY);
-        println!("url: {}", url);
-        let parsed = match json_get(&url) {
-            Ok(text) => text,
-            Err(e) => {
-                // TODO: gtk dialog
-                println!("{}", e);
-                return;
-            }
+        match fetch_image(name) {
+            Err(e) => gtk_err(&fw, &e),
+            Ok(path) => {fpp.set_filename(path);}
         };
-        if parsed["results"].is_null() {
-            println!("no results array");
-            return;
-        }
-        let tmdb_base_url = match *TMDB_BASE_URL {
-            Ok(ref a) => a,
-            Err(ref e) => {
-                // TODO: gtk dialog
-                println!("can't get tmdb base url: {}", e);
-                return;
-            }
-        };
-        for r in parsed["results"].members() {
-            let ref path = r["poster_path"];
-            if path.is_null() {
-                continue;
-            }
-            let path = match path.as_str() {
-                Some(x) => x,
-                None => continue
-            };
-            let image_url = format!("{}original{}", tmdb_base_url, path);
-            println!("{}", image_url);
-            let path = match download_image(&image_url) {
-                Ok(path) => path,
-                Err(e) => {
-                    // TODO: gtk dialog
-                    println!("{}", e);
-                    return;
-                }
-            };
-            fpp.set_filename(path);
-            break;
-        }
     });
 
     let fsne = name_entry.clone();
