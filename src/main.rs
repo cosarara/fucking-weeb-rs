@@ -61,7 +61,20 @@ use db::*;
 mod tmdb;
 use tmdb::*;
 
+use std::cell::RefCell;
+use std::sync::mpsc::{channel, Receiver};
+
 static APP_TITLE: &'static str = "Fucking Weeb";
+
+// declare a new thread local storage key
+// TODO: proper struct
+thread_local!(
+    static GLOBAL: RefCell<Option<(gtk::FileChooserButton,
+                                   gtk::Button,
+                                   gtk::Window,
+                                   Receiver<Result<String,String>>)>> = RefCell::new(None)
+);
+
 
 fn gtk_err(window: &Window, message: &str) {
     println!("{}", message);
@@ -419,6 +432,44 @@ fn fetch_image(name: &str) -> Result<String, String> {
     return Err("Image not found".to_string());
 }
 
+fn receive() -> glib::Continue {
+    GLOBAL.with(|global| {
+        if let Some((ref picker, ref button,
+                     ref window, ref rx)) = *global.borrow() {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(text) => {
+                        picker.set_filename(&text);
+                    },
+                    Err(e) => { gtk_err(&window, &e); }
+                }
+                button.set_sensitive(true);
+            }
+        }
+    });
+    glib::Continue(false)
+}
+
+fn download_thread(window: &Window, button: &gtk::Button, picker: &gtk::FileChooserButton, name: &str) {
+    let name = name.to_string();
+    let (tx, rx) = channel();
+    GLOBAL.with(move |global| {
+        *global.borrow_mut() = Some((picker.clone(), button.clone(), window.clone(), rx))
+    });
+
+    std::thread::spawn(move || {
+        match fetch_image(&name) {
+            Err(e) => {
+                tx.send(Err(e))
+            }, //gtk_err(&fw, &e),
+            Ok(path) => {
+                tx.send(Ok(path))
+            }
+        }.expect("Couldn't send data to channel");
+        glib::idle_add(receive);
+    });
+}
+
 fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
                settings: &Settings) {
     let orig_items = items.clone();
@@ -581,12 +632,12 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
     let fpp = poster_picker.clone();
     let fne = name_entry.clone();
     let fw = window.clone();
+    let fib = fetch_image_button.clone();
+
     fetch_image_button.connect_clicked(move |_| {
-        let ref name = fne.get_text().unwrap();
-        match fetch_image(name) {
-            Err(e) => gtk_err(&fw, &e),
-            Ok(path) => {fpp.set_filename(path);}
-        };
+        fib.set_sensitive(false);
+        let name = fne.get_text().unwrap().to_string();
+        download_thread(&fw, &fib, &fpp, &name);
     });
 
     let fsne = name_entry.clone();
