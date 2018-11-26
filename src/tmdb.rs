@@ -16,11 +16,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Fucking Weeb.  If not, see <http://www.gnu.org/licenses/>.
 
-use hyper;
 use json;
 use xdg;
 use regex::Regex;
-use hyper_native_tls::{NativeTlsClient, native_tls};
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -31,45 +29,14 @@ lazy_static! {
     pub static ref TMDB_BASE_URL: Result<String, String> = get_tmdb_base_url();
 }
 
-fn make_https_client() -> native_tls::Result<hyper::client::Client> {
-    NativeTlsClient::new().map(
-        |ssl| {
-            let connector = hyper::net::HttpsConnector::new(ssl);
-            let client = hyper::client::Client::with_connector(connector);
-            client
-        })
-}
-
-fn https_get(url: &str) -> Result<String, String> {
-    let client = match make_https_client() {
-        Ok(ssl) => ssl,
-        Err(e) => {
-            return Err(format!("error creating https client: {}", e));
-        }
-    };
-    let req = client.get(url);
-    let mut res = match req.send() {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(format!("error making request: {}", e));
-        }
-    };
-    let mut text = String::new();
-    match res.read_to_string(&mut text) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error reading response: {}", e));
-        }
-    }
-    Ok(text)
-}
-
 pub fn json_get(url: &str) -> Result<json::JsonValue, String> {
-    let text = match https_get(url) {
-        Ok(text) => text,
-        Err(e) => {
-            return Err(e.to_string());
-        }
+    let text = match reqwest::get(url) {
+        Ok(mut resp) => resp.text(),
+        Err(e) => return Err(e.to_string())
+    };
+    let text = match text {
+        Ok(a) => a,
+        Err(e) => return Err(e.to_string())
     };
     let parsed = match json::parse(&text) {
         Ok(o) => o,
@@ -96,27 +63,17 @@ fn get_tmdb_base_url() -> Result<String, String> {
 }
 
 fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
-    let client = match make_https_client() {
-        Ok(ssl) => ssl,
+    let mut resp = match reqwest::get(url) {
+        Ok(o) => o,
         Err(e) => {
-            return Err(format!("error creating https client: {}", e));
-        }
+            return Err(e.to_string());
+        },
     };
-    let req = client.get(url);
-    let mut res = match req.send() {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(format!("error making request: {}", e));
-        }
-    };
-    let mut file = Vec::<u8>::new();
-    match res.read_to_end(&mut file) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error reading response: {}", e));
-        }
+    let mut buf: Vec<u8> = vec![];
+    match resp.copy_to(&mut buf) {
+        Ok(_) => Ok(buf),
+        Err(e) => Err(e.to_string())
     }
-    Ok(file)
 }
 
 pub fn download_image(image_url: &str) -> Result<String, String> {

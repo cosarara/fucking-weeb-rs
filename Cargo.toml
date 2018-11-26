@@ -1,6 +1,6 @@
 [package]
 name = "fucking-weeb-rs"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jaume Delclòs Coll <cosarara97@gmail.com>"]
 
 [dependencies.gtk]
@@ -28,11 +28,8 @@ version = "0.2"
 [dependencies.lazy_static]
 version = "1.0"
 
-[dependencies.hyper]
-version = "0.10"
-
-[dependencies.hyper-native-tls]
-version = "0.2"
+[dependencies.reqwest]
+version = "0.9.5"
 
 [dependencies.json]
 version = "0.11"

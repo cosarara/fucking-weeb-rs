@@ -29,8 +29,6 @@ extern crate serde_json;
 extern crate serde_derive;
 
 // TMDB
-extern crate hyper;
-extern crate hyper_native_tls;
 // yes we have 2 different jsons k
 extern crate json;
 
