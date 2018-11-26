@@ -30,78 +30,44 @@ lazy_static! {
 }
 
 pub fn json_get(url: &str) -> Result<json::JsonValue, String> {
-    let text = match reqwest::get(url) {
-        Ok(mut resp) => resp.text(),
-        Err(e) => return Err(e.to_string())
-    };
-    let text = match text {
-        Ok(a) => a,
-        Err(e) => return Err(e.to_string())
-    };
-    let parsed = match json::parse(&text) {
-        Ok(o) => o,
-        Err(e) => {
-            return Err(e.to_string());
-        },
-    };
-    Ok(parsed)
+    let text = reqwest::get(url).map_err(|e| e.to_string())?
+        .text().map_err(|e| e.to_string())?;
+    json::parse(&text).map_err(|e| e.to_string())
 }
 
 fn get_tmdb_base_url() -> Result<String, String> {
     let url = format!("{}configuration?{}", TMDB, TMDB_KEY);
-    let parsed = match json_get(&url) {
-        Ok(text) => text,
-        Err(e) => {
-            return Err(e);
-        }
-    };
+    let parsed = json_get(&url)?;
     let ref json_tmdb_base_url = parsed["images"]["base_url"];
-    match json_tmdb_base_url.as_str().map(|x| x.to_string()) {
-        Some(a) => Ok(a),
-        None => Err("base_url string not found in json".to_string()),
-    }
+    json_tmdb_base_url.as_str()
+        .map(|x| x.to_string())
+        .ok_or("base_url string not found in json".to_string())
 }
 
 fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
-    let mut resp = match reqwest::get(url) {
-        Ok(o) => o,
-        Err(e) => {
-            return Err(e.to_string());
-        },
-    };
+    let mut resp = reqwest::get(url).map_err(|e| e.to_string())?;
     let mut buf: Vec<u8> = vec![];
-    match resp.copy_to(&mut buf) {
-        Ok(_) => Ok(buf),
-        Err(e) => Err(e.to_string())
-    }
+    resp.copy_to(&mut buf)
+        .map(|_| buf)
+        .map_err(|e| e.to_string())
 }
 
 pub fn download_image(image_url: &str) -> Result<String, String> {
-    let image_file = match https_get_bin(&image_url) {
-        Ok(a) => a,
-        Err(e) => {
-            return Err(format!("error downloading image: {}", e));
-        }
-    };
+    let image_file = https_get_bin(&image_url)
+        .map_err(|e| format!("error downloading image: {}", e))?;
+
     let file_name = Regex::new(r".*/").unwrap().
         replace(&image_url, "").into_owned();
 
+    // todo check this unwrap
     let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
     let path = xdg_dirs.place_data_file(file_name.clone())
-        .expect("cannot create data directory");
+        .map_err(|_| "cannot create data directory")?;
 
-    let mut file = match File::create(path.clone()) {
-        Ok(f) => f,
-        Err(e) => {
-            return Err(format!("error opening image file for writing: {}", e));
-        }
-    };
-    match file.write_all(&image_file) {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!("error saving image: {}", e));
-        }
-    }
-    return Ok(path.to_str().unwrap().to_string());
+    let mut file = File::create(path.clone())
+        .map_err(|e| format!("error opening image file for writing: {}", e))?;
+    file.write_all(&image_file)
+        .map_err(|e| format!("error saving image: {}", e))?;
+    return Ok(path.to_string_lossy().to_string());
 }
 
