@@ -594,6 +594,9 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
     let s: Vec<Show> = orig_items.clone();
     let cset = settings.clone();
     cancel_button.connect_clicked(move |_| {
+        GLOBAL.with(move |global| {
+            *global.borrow_mut() = None
+        });
         if adding {
             main_screen(&w, &s, &cset);
         } else {
@@ -608,6 +611,10 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
     let spap = path_picker.clone();
     let sne = name_entry.clone();
     save_button.connect_clicked(move |_| {
+        GLOBAL.with(move |global| {
+            *global.borrow_mut() = None
+        });
+
         let mut items = ss.clone();
         items[i].name = sne.get_text().unwrap();
         items[i].path = spap.get_filename().unwrap().as_path()
@@ -638,6 +645,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
         fib.set_sensitive(false);
         let name = fne.get_text().unwrap().to_string();
         download_thread(&fw, &fib, &fpp, &name);
+        println!("download thread started");
     });
 
     let fsne = name_entry.clone();

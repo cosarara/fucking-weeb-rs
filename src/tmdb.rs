@@ -56,8 +56,10 @@ fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
 }
 
 pub fn download_image(image_url: &str) -> Result<String, String> {
+    println!("starting download");
     let image_file = https_get_bin(&image_url)
         .map_err(|e| format!("error downloading image: {}", e))?;
+    println!("finished download");
 
     let file_name = Regex::new(r".*/").unwrap().
         replace(&image_url, "").into_owned();
