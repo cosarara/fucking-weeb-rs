@@ -41,7 +41,7 @@ Now go watch [the video].
 Running
 -------
 
-Install rust, cargo, and gtk3, then:
+Install rust, cargo, gtk3, and libsoup, then:
 
     $ cargo run
 
