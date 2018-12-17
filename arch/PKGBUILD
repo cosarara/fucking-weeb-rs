@@ -1,6 +1,6 @@
 # Maintainer: Jaume Delclòs (cosarara) <cosarara97@gmail.com>
 pkgname=weeb-rs-git
-pkgver=r40.8463e37
+pkgver=r46.37b77c7
 pkgrel=1
 pkgdesc="A library manager for anime and series - rust rewrite"
 arch=("i686" "x86_64")

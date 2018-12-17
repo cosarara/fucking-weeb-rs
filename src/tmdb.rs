@@ -30,8 +30,9 @@ lazy_static! {
 }
 
 pub fn json_get(url: &str) -> Result<json::JsonValue, String> {
-    let text = reqwest::get(url).map_err(|e| e.to_string())?
-        .text().map_err(|e| e.to_string())?;
+    let data = crate::soup::get_sync(&url)
+        .map_err(|e| format!("error downloading json: {}", e))?;
+    let text = std::str::from_utf8(&data).map_err(|e| format!("error decoding json text: {}", e))?;
     json::parse(&text).map_err(|e| e.to_string())
 }
 
@@ -44,20 +45,10 @@ fn get_tmdb_base_url() -> Result<String, String> {
         .ok_or("base_url string not found in json".to_string())
 }
 
-fn https_get_bin(url: &str) -> Result<Vec<u8>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Some(core::time::Duration::new(5, 0)))
-        .build().map_err(|e| e.to_string())?;
-    let mut resp = client.get(url).send().map_err(|e| e.to_string())?;
-    let mut buf: Vec<u8> = vec![];
-    resp.copy_to(&mut buf)
-        .map(|_| buf)
-        .map_err(|e| e.to_string())
-}
-
 pub fn download_image(image_url: &str) -> Result<String, String> {
     println!("starting download");
-    let image_file = https_get_bin(&image_url)
+    //let image_file = https_get_bin(&image_url)
+    let image_file = crate::soup::get_sync(&image_url)
         .map_err(|e| format!("error downloading image: {}", e))?;
     println!("finished download");
 

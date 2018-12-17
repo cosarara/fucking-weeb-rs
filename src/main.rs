@@ -21,12 +21,14 @@ extern crate gtk_sys;
 extern crate gdk_sys;
 extern crate gdk_pixbuf;
 extern crate glib;
+extern crate soup_sys;
 extern crate regex;
 extern crate xdg;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use] extern crate log;
 
 // TMDB
 // yes we have 2 different jsons k
@@ -44,22 +46,19 @@ use gtk::{Button, Window, WindowType, Box, Orientation,
 
 use gdk_pixbuf::Pixbuf;
 
-use glib::translate::ToGlibPtr;
-
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use regex::Regex;
 
-use std::ffi::CString;
-//use std::os::raw::c_char;
-
 mod db;
 use db::*;
 
 mod tmdb;
 use tmdb::*;
+
+mod soup;
 
 use std::cell::RefCell;
 use std::sync::mpsc::{channel, Receiver};
@@ -163,40 +162,6 @@ fn watch(show: &Show, player: &str) -> Result<(), String> {
     Ok(())
 }
 
-// WTF
-//#[repr(C)]
-//pub struct StaticCString(*mut u8);
-//unsafe impl Sync for StaticCString {}
-//
-//#[no_mangle]
-//pub static CONST_C_STR: StaticCString =
-//    StaticCString(b"text/plain\0" as *const u8);
-
-//static mut dnd_target_entry_str: vec<i8> = b"text/plain";
-
-//unsafe {
-/*
-    static mut DND_TARGET_ENTRY: gtk_sys::GtkTargetEntry =
-    gtk_sys::GtkTargetEntry {
-        target: StaticCString as *mut i8,
-        flags: 0,
-        info: 0,
-    };
-    */
-//}
-
-//static c_to_print: CString = CString::new("Hello, world!").unwrap();
-//const CONST_C_STR: &'static [u8] = b"a constant c string\n\0";
-//const CONST_C_STR: &'static [u8] = b"a constant c string\n\0";
-//lazy_static! {
-//    static ref DND_TARGET_ENTRY: gtk_sys::GtkTargetEntry =
-//        gtk_sys::GtkTargetEntry {
-//            target: unsafe { CONST_C_STR.as_ptr() as *mut i8 },
-//            flags: 0,
-//            info: 0,
-//        };
-//}
-
 fn make_title_label(text: &str) -> Label {
     let label = Label::new(None);
     label.set_markup(&format!("<span weight='bold' size='xx-large'>{}</span>", text));
@@ -265,21 +230,9 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // cover
     let cover_event_box = EventBox::new();
-    let c_string = CString::new("text/plain").unwrap();
-    let mut dnd_target_entry =
-        gtk_sys::GtkTargetEntry {
-            target: c_string.as_ptr() as *mut i8,
-            flags: 0,
-            info: 0,
-        };
-    // is this bad?
-    unsafe {
-        gtk_sys::gtk_drag_dest_set(cover_event_box.to_glib_none().0,
-                                   gtk_sys::GTK_DEST_DEFAULT_ALL,
-                                   &mut dnd_target_entry,
-                                   1,
-                                   gdk_sys::GDK_ACTION_COPY);
-    };
+    let targets = vec![gtk::TargetEntry::new("STRING", gtk::TargetFlags::empty(), 0),
+                       gtk::TargetEntry::new("text/plain", gtk::TargetFlags::empty(), 0)];
+    cover_event_box.drag_dest_set(gtk::DestDefaults::ALL, &targets, gdk::DragAction::COPY);
 
     // TODO: use cairo here, to have it resize automagically
     let image = match Pixbuf::new_from_file_at_size(
@@ -759,13 +712,6 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         Err(_) => Regex::new("").unwrap() // TODO: tell the user
     };
 
-    let c_string = CString::new("text/plain").unwrap();
-    let mut dnd_target_entry =
-        gtk_sys::GtkTargetEntry {
-            target: c_string.as_ptr() as *mut i8,
-            flags: 0,
-            info: 0,
-        };
 
     let mut items = items.clone();
     items.sort_by_key(|x| {x.name.clone()});
@@ -775,22 +721,16 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
             continue;
         }
         let cover_event_box = EventBox::new();
-        cover_event_box.set_events(
-            gdk_sys::GDK_BUTTON_PRESS_MASK.bits() as i32);
+        cover_event_box.set_events(gdk_sys::GDK_BUTTON_PRESS_MASK as i32);
 
         let cover_box = Box::new(Orientation::Vertical, 0);
         cover_event_box.add(&cover_box);
         cover_box.set_size_request(100, 200);
 
-        unsafe {
-            gtk_sys::gtk_drag_dest_set(cover_event_box.to_glib_none().0,
-            gtk_sys::GTK_DEST_DEFAULT_ALL,
-            &mut dnd_target_entry,
-            1,
-            gdk_sys::GDK_ACTION_COPY);
-        };
+        let targets = vec![gtk::TargetEntry::new("STRING", gtk::TargetFlags::empty(), 0),
+                           gtk::TargetEntry::new("text/plain", gtk::TargetFlags::empty(), 0)];
+        cover_event_box.drag_dest_set(gtk::DestDefaults::ALL, &targets, gdk::DragAction::COPY);
 
-        // TODO: how do I unref?
         let image = match Pixbuf::new_from_file_at_size(
             &item.poster_path, 200, 200) {
             Ok(pixbuf) => Image::new_from_pixbuf(Some(&pixbuf)),
