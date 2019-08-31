@@ -17,17 +17,14 @@
 // along with Fucking Weeb.  If not, see <http://www.gnu.org/licenses/>.
 
 extern crate gtk;
-extern crate gtk_sys;
-extern crate gdk_sys;
 extern crate gdk_pixbuf;
 extern crate glib;
-extern crate soup_sys;
+extern crate http_req;
 extern crate regex;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use] extern crate log;
 extern crate directories;
 
 // TMDB
@@ -58,7 +55,6 @@ use db::*;
 mod tmdb;
 use tmdb::*;
 
-mod soup;
 mod dirs;
 
 use std::cell::RefCell;
@@ -221,12 +217,12 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
 
     // rm button
     let remove_button = Button::new_from_icon_name(
-        "gtk-remove", IconSize::Button.into());
+        Some("gtk-remove"), IconSize::Button.into());
     title_box.pack_end(&remove_button, false, true, 3);
 
     // edit button
     let edit_button = Button::new_from_icon_name(
-        "gtk-edit", IconSize::Button.into());
+        Some("gtk-edit"), IconSize::Button.into());
     title_box.pack_end(&edit_button, false, true, 0);
 
     // cover
@@ -239,7 +235,7 @@ fn view_screen(window: &Window, items: &Vec<Show>, i: usize, settings: &Settings
     let image = match Pixbuf::new_from_file_at_size(
         &show.poster_path, 300, 300) {
         Ok(pixbuf) => Image::new_from_pixbuf(Some(&pixbuf)),
-        Err(_) => Image::new_from_icon_name("gtk-missing-image", 1)
+        Err(_) => Image::new_from_icon_name(Some("gtk-missing-image"), gtk::IconSize::Button)
     };
 
     cover_event_box.add(&image);
@@ -498,7 +494,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
 
     let image_filter = gtk::FileFilter::new();
     image_filter.add_mime_type("image/*");
-    gtk::FileFilterExt::set_name(&image_filter, Some("Image File"));
+    image_filter.set_name(Some("Image File"));
     poster_picker.add_filter(&image_filter);
 
     let fetch_image_button = Button::new_with_label("Download");
@@ -570,7 +566,7 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
         });
 
         let mut items = ss.clone();
-        items[i].name = sne.get_text().unwrap();
+        items[i].name = sne.get_text().unwrap().to_string();
         items[i].path = spap.get_filename().unwrap().as_path()
             .to_str().unwrap().to_string();
         items[i].poster_path = spp.get_filename().unwrap().as_path()
@@ -583,8 +579,8 @@ fn edit_screen(window: &Window, items: &Vec<Show>, i: Option<usize>,
             Ok(n) => n,
             Err(_) => 0,
         };
-        items[i].regex = regex_entry.get_text().unwrap();
-        items[i].player = player_entry.get_text().unwrap();
+        items[i].regex = regex_entry.get_text().unwrap().to_string();
+        items[i].player = player_entry.get_text().unwrap().to_string();
         save_db(&sset, &items);
 
         view_screen(&sw, &items, i, &sset);
@@ -691,8 +687,8 @@ fn settings_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     let sset = settings.clone();
     save_button.connect_clicked(move |_| {
         let mut set = sset.clone();
-        set.player = player_entry.get_text().unwrap();
-        set.path = path_entry.get_text().unwrap();
+        set.player = player_entry.get_text().unwrap().to_string();
+        set.path = path_entry.get_text().unwrap().to_string();
         save_db(&set, &ss);
         main_screen(&sw, &ss, &set);
     });
@@ -722,7 +718,7 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
             continue;
         }
         let cover_event_box = EventBox::new();
-        cover_event_box.set_events(gdk_sys::GDK_BUTTON_PRESS_MASK as i32);
+        cover_event_box.set_events(gdk::EventMask::BUTTON_PRESS_MASK);
 
         let cover_box = Box::new(Orientation::Vertical, 0);
         cover_event_box.add(&cover_box);
@@ -735,7 +731,7 @@ fn build_poster_list(window: &Window, button_box: &FlowBox,
         let image = match Pixbuf::new_from_file_at_size(
             &item.poster_path, 200, 200) {
             Ok(pixbuf) => Image::new_from_pixbuf(Some(&pixbuf)),
-            Err(_) => Image::new_from_icon_name("gtk-missing-image", 1)
+            Err(_) => Image::new_from_icon_name(Some("gtk-missing-image"), gtk::IconSize::Button)
         };
         /*
         let pixbuf = Pixbuf::new_from_file_at_size(
@@ -793,7 +789,7 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     title_box.set_center_widget(Some(&title_label));
 
     let settings_button = Button::new_from_icon_name(
-        "gtk-preferences", IconSize::Button.into());
+        Some("gtk-preferences"), IconSize::Button.into());
 
     let sw = window.clone();
     let sitems: Vec<Show> = items.clone();
@@ -823,20 +819,25 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
         Err(e) => println!("error loading css: {}", e),
         Ok(_) => ()
     }
-    let search_bar_style_context = search_bar.get_style_context().unwrap();
+    let search_bar_style_context = search_bar.get_style_context();
     search_bar_style_context.add_provider(&search_css_provider,
                                           gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 
     search_box.pack_start(&search_bar, true, true, 5);
     let add_button = Button::new_from_icon_name(
-        "gtk-add", IconSize::Button.into());
+        Some("gtk-add"), IconSize::Button.into());
     search_box.pack_start(&add_button, false, true, 0);
 
-    let scrolled_window = ScrolledWindow::new(None, None);
+    let scrolled_window = ScrolledWindow::new(
+        // this is stupid and didn't use to be like this, lemme tell you
+        None as Option<&gtk::Adjustment>,
+        None as Option<&gtk::Adjustment>);
     main_box.pack_start(&scrolled_window, true, true, 0);
 
-    let viewport = Viewport::new(None, None);
+    let viewport = Viewport::new(
+        None as Option<&gtk::Adjustment>,
+        None as Option<&gtk::Adjustment>);
     scrolled_window.add(&viewport);
 
     // POSTERS

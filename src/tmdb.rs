@@ -22,6 +22,7 @@ use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use dirs;
+use http_req::request;
 
 pub static TMDB: &'static str = "https://api.themoviedb.org/3/";
 pub static TMDB_KEY: &'static str = "api_key=fd7b3b3e7939e8eb7c8e26836b8ea410";
@@ -31,7 +32,8 @@ lazy_static! {
 }
 
 pub fn json_get(url: &str) -> Result<json::JsonValue, String> {
-    let data = crate::soup::get_sync(&url)
+    let mut data = Vec::new();
+    let _res = request::get(url, &mut data)
         .map_err(|e| format!("error downloading json: {}", e))?;
     let text = std::str::from_utf8(&data).map_err(|e| format!("error decoding json text: {}", e))?;
     json::parse(&text).map_err(|e| e.to_string())
@@ -49,7 +51,8 @@ fn get_tmdb_base_url() -> Result<String, String> {
 pub fn download_image(image_url: &str) -> Result<String, String> {
     println!("starting download");
     //let image_file = https_get_bin(&image_url)
-    let image_file = crate::soup::get_sync(&image_url)
+    let mut image_file = Vec::new();
+    let _res = request::get(image_url, &mut image_file)
         .map_err(|e| format!("error downloading image: {}", e))?;
     println!("finished download");
 
