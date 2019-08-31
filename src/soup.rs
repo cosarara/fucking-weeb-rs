@@ -7,11 +7,12 @@ use std::mem::transmute;
 use std::boxed::Box as Box_;
 use std::error;
 
+#[allow(dead_code)]
 unsafe extern "C"
 fn finished_trampoline(session: *mut SoupSession, msg: *mut SoupMessage,
                        f: glib_sys::gpointer)
 {
-    let f: &&(Fn(*mut SoupSession, *mut SoupMessage) + 'static) = transmute(f);
+    let f: &&(dyn Fn(*mut SoupSession, *mut SoupMessage) + 'static) = transmute(f);
     f(session, msg)
 }
 
@@ -28,7 +29,7 @@ impl error::Error for BadURL {
         "URL can't be parsed"
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&(dyn error::Error)> {
         // Generic error, underlying cause isn't tracked.
         None
     }
@@ -47,13 +48,13 @@ impl error::Error for HttpError {
         "HTTP error"
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<& (dyn error::Error)> {
         // Generic error, underlying cause isn't tracked.
         None
     }
 }
 
-pub fn get_sync(url: &str) -> Result<Vec<u8>, Box<std::error::Error>>
+pub fn get_sync(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>>
 {
     let url = CString::new(url)?;
     let method = CString::new("GET").unwrap();
@@ -85,7 +86,8 @@ pub fn get_sync(url: &str) -> Result<Vec<u8>, Box<std::error::Error>>
     }
 }
 
-pub fn get_async<F: Fn(Option<&[u8]>) + 'static>(url: &str, f: F) -> Result<(), Box<std::error::Error>>
+#[allow(dead_code)]
+pub fn get_async<F: Fn(Option<&[u8]>) + 'static>(url: &str, f: F) -> Result<(), Box<dyn std::error::Error>>
 {
     let url = CString::new(url)?;
     let method = CString::new("GET").unwrap();
@@ -111,7 +113,7 @@ pub fn get_async<F: Fn(Option<&[u8]>) + 'static>(url: &str, f: F) -> Result<(), 
             gobject_sys::g_object_unref(msg_ptr as *mut gobject_sys::GObject);
         }
     };
-    let finished: Box_<Box_<Fn(*mut SoupSession, *mut SoupMessage) + 'static>> =
+    let finished: Box_<Box_<dyn Fn(*mut SoupSession, *mut SoupMessage) + 'static>> =
         Box_::new(Box_::new(finished));
 
     unsafe {
