@@ -32,6 +32,7 @@ lazy_static! {
 }
 
 pub fn json_get(url: &str) -> Result<json::JsonValue, String> {
+    let url = &url.to_owned().replace(" ", "%20");
     let mut data = Vec::new();
     let _res = request::get(url, &mut data)
         .map_err(|e| format!("error downloading json: {}", e))?;
@@ -49,6 +50,7 @@ fn get_tmdb_base_url() -> Result<String, String> {
 }
 
 pub fn download_image(image_url: &str) -> Result<String, String> {
+    let image_url = &image_url.to_owned().replace(" ", "%20");
     println!("starting download");
     //let image_file = https_get_bin(&image_url)
     let mut image_file = Vec::new();
