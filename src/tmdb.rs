@@ -17,10 +17,11 @@
 // along with Fucking Weeb.  If not, see <http://www.gnu.org/licenses/>.
 
 use json;
-use xdg;
 use regex::Regex;
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
+use dirs;
 
 pub static TMDB: &'static str = "https://api.themoviedb.org/3/";
 pub static TMDB_KEY: &'static str = "api_key=fd7b3b3e7939e8eb7c8e26836b8ea410";
@@ -55,10 +56,10 @@ pub fn download_image(image_url: &str) -> Result<String, String> {
     let file_name = Regex::new(r".*/").unwrap().
         replace(&image_url, "").into_owned();
 
-    // todo check this unwrap
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let path = xdg_dirs.place_data_file(file_name.clone())
-        .map_err(|_| "cannot create data directory")?;
+    let path = dirs::dirs().data_dir();
+    fs::create_dir_all(path)
+        .expect("cannot create data directory");
+    let path = path.join(file_name);
 
     let mut file = File::create(path.clone())
         .map_err(|e| format!("error opening image file for writing: {}", e))?;

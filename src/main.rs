@@ -23,12 +23,12 @@ extern crate gdk_pixbuf;
 extern crate glib;
 extern crate soup_sys;
 extern crate regex;
-extern crate xdg;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use] extern crate log;
+extern crate directories;
 
 // TMDB
 // yes we have 2 different jsons k
@@ -59,6 +59,7 @@ mod tmdb;
 use tmdb::*;
 
 mod soup;
+mod dirs;
 
 use std::cell::RefCell;
 use std::sync::mpsc::{channel, Receiver};
@@ -812,10 +813,11 @@ fn main_screen(window: &Window, items: &Vec<Show>, settings: &Settings) {
     main_box.pack_start(&search_box, false, true, 5);
     let search_bar = SearchEntry::new();
     let search_css_provider = gtk::CssProvider::new();
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let search_css_path = match xdg_dirs.find_data_file("search.css") {
-        Some(p) => p.as_path().to_str().unwrap().to_owned(),
-        None => "search.css".to_owned()
+    let search_css_path = dirs::dirs().data_dir().join("search.css");
+    let search_css_path = if search_css_path.is_file() {
+        search_css_path.to_str().unwrap().to_owned()
+    } else {
+        "search.css".to_owned()
     };
     match search_css_provider.load_from_path(&search_css_path) {
         Err(e) => println!("error loading css: {}", e),
@@ -874,6 +876,10 @@ fn main() {
     let window = Window::new(WindowType::Toplevel);
     window.set_title(APP_TITLE);
     window.set_default_size(570, 600);
+
+    if dirs::DIRS.as_ref().is_none() {
+        gtk_err(&window, "couldn't get home directory");
+    }
 
     let db = load_db();
     let shows = db.shows;

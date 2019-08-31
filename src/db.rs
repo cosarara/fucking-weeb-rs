@@ -16,10 +16,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Fucking Weeb.  If not, see <http://www.gnu.org/licenses/>.
 
-use xdg;
 use std::fs::File;
 use std::io::prelude::*;
 use serde_json;
+use dirs;
+use std::fs;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Show {
@@ -90,14 +91,11 @@ pub fn load_db() -> WeebDB {
         ],
     };
 
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let config_path = match xdg_dirs.find_config_file("fw-rs-db.json") {
-        None => {
-            println!("db file not found");
-            return default_settings;
-        },
-        Some(path) => path
-    };
+    let config_path = dirs::dirs().config_dir().join("fw-rs-db.json");
+    if !config_path.is_file() {
+        println!("db file not found");
+        return default_settings;
+    }
 
     let mut file = match File::open(config_path) {
         Err(e) => {
@@ -134,9 +132,10 @@ pub fn save_db(settings: &Settings, items: &Vec<Show>) {
     let encoded = serde_json::to_string(&db).unwrap();
     //println!("{}", encoded);
     // TODO: handle errors
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("fucking-weeb").unwrap();
-    let config_path = xdg_dirs.place_config_file("fw-rs-db.json")
-                          .expect("cannot create configuration directory");
+    let config_path = dirs::dirs().config_dir();
+    fs::create_dir_all(config_path)
+        .expect("cannot create configuration directory");
+    let config_path = config_path.join("fw-rs-db.json");
     let mut file = File::create(config_path).expect("cannot create db file");
     match file.write_all(format!("{}\n", encoded).as_bytes()) {
         Ok(_) => (),
