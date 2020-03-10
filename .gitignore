@@ -1,1 +1,4 @@
 target
+arch/
+fw-rs-db*
+*.png
